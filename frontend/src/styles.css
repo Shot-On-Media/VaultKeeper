@@ -20,7 +20,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -156,7 +157,8 @@ label {
   font-weight: 700;
 }
 
-input {
+input,
+select {
   width: 100%;
   height: 42px;
   padding: 0 12px;
@@ -166,9 +168,17 @@ input {
   border-radius: 6px;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: #2a69c7;
   outline: 3px solid #cfe0ff;
+}
+
+.repository-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(220px, 320px) auto;
+  gap: 14px;
+  align-items: end;
 }
 
 .form-actions,
@@ -285,6 +295,10 @@ td small {
   }
 
   .storage-form {
+    grid-template-columns: 1fr;
+  }
+
+  .repository-form {
     grid-template-columns: 1fr;
   }
 

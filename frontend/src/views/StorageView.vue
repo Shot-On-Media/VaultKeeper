@@ -1,25 +1,37 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 
+import { RepositoryLocation, useRepositoryStore } from '../stores/repository'
 import { StorageLocation, useStorageStore } from '../stores/storage'
 
 const storageStore = useStorageStore()
+const repositoryStore = useRepositoryStore()
 const editingUuid = ref<string | null>(null)
+const editingRepositoryUuid = ref<string | null>(null)
 const form = reactive({
   name: '',
   path: '',
 })
+const repositoryForm = reactive({
+  name: '',
+  storageUuid: '',
+})
 
 const hasStorage = computed(() => storageStore.items.length > 0)
+const hasRepositories = computed(() => repositoryStore.items.length > 0)
 const validCount = computed(
   () => storageStore.items.filter((item) => item.status === 'valid').length,
 )
 const invalidCount = computed(
   () => storageStore.items.filter((item) => item.status === 'invalid').length,
 )
+const validRepositoryCount = computed(
+  () => repositoryStore.items.filter((item) => item.status === 'valid').length,
+)
 
 onMounted(() => {
   void storageStore.loadStorage()
+  void repositoryStore.loadRepositories()
 })
 
 function resetForm(): void {
@@ -49,6 +61,38 @@ async function deleteStorage(storageUuid: string): Promise<void> {
     resetForm()
   }
 }
+
+function storageName(storageUuid: string): string {
+  return storageStore.items.find((storage) => storage.uuid === storageUuid)?.name ?? storageUuid
+}
+
+function resetRepositoryForm(): void {
+  editingRepositoryUuid.value = null
+  repositoryForm.name = ''
+  repositoryForm.storageUuid = ''
+}
+
+function editRepository(repository: RepositoryLocation): void {
+  editingRepositoryUuid.value = repository.uuid
+  repositoryForm.name = repository.name
+  repositoryForm.storageUuid = repository.storage_uuid
+}
+
+async function saveRepository(): Promise<void> {
+  if (editingRepositoryUuid.value === null) {
+    await repositoryStore.createRepository(repositoryForm)
+  } else {
+    await repositoryStore.updateRepository(editingRepositoryUuid.value, repositoryForm.name)
+  }
+  resetRepositoryForm()
+}
+
+async function deleteRepository(repositoryUuid: string): Promise<void> {
+  await repositoryStore.deleteRepository(repositoryUuid)
+  if (editingRepositoryUuid.value === repositoryUuid) {
+    resetRepositoryForm()
+  }
+}
 </script>
 
 <template>
@@ -59,31 +103,40 @@ async function deleteStorage(storageUuid: string): Promise<void> {
         <h1>Storage</h1>
       </div>
       <nav class="nav-list" aria-label="Primary">
-        <a class="nav-item active" href="/">Storage</a>
+        <a class="nav-item active" href="#storage">Storage</a>
+        <a class="nav-item" href="#repositories">Repositories</a>
       </nav>
       <dl class="summary-list">
         <div>
-          <dt>Total</dt>
+          <dt>Storage</dt>
           <dd>{{ storageStore.items.length }}</dd>
         </div>
         <div>
-          <dt>Valid</dt>
+          <dt>Storage Valid</dt>
           <dd>{{ validCount }}</dd>
         </div>
         <div>
-          <dt>Invalid</dt>
+          <dt>Storage Invalid</dt>
           <dd>{{ invalidCount }}</dd>
+        </div>
+        <div>
+          <dt>Repositories</dt>
+          <dd>{{ repositoryStore.items.length }}</dd>
+        </div>
+        <div>
+          <dt>Repo Valid</dt>
+          <dd>{{ validRepositoryCount }}</dd>
         </div>
       </dl>
     </aside>
 
     <section class="workspace">
-      <header class="page-header">
+      <header id="storage" class="page-header">
         <div>
           <p class="eyebrow">Milestone 1</p>
           <h2>Storage Locations</h2>
         </div>
-        <button class="secondary-button" type="button" @click="storageStore.loadStorage">
+        <button class="secondary-button" type="button" @click="storageStore.loadStorage()">
           Refresh
         </button>
       </header>
@@ -173,6 +226,135 @@ async function deleteStorage(storageUuid: string): Promise<void> {
                   class="danger-button"
                   type="button"
                   @click="deleteStorage(storage.uuid)"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <header id="repositories" class="page-header">
+        <div>
+          <p class="eyebrow">Milestone 2</p>
+          <h2>Repositories</h2>
+        </div>
+        <button
+          class="secondary-button"
+          type="button"
+          @click="repositoryStore.loadRepositories()"
+        >
+          Refresh
+        </button>
+      </header>
+
+      <div v-if="repositoryStore.error" class="notice error">
+        {{ repositoryStore.error }}
+      </div>
+
+      <section class="form-panel" aria-label="Repository form">
+        <form class="repository-form" @submit.prevent="saveRepository">
+          <label>
+            <span>Name</span>
+            <input v-model="repositoryForm.name" required maxlength="120" />
+          </label>
+          <label>
+            <span>Storage</span>
+            <select
+              v-model="repositoryForm.storageUuid"
+              required
+              :disabled="editingRepositoryUuid !== null"
+            >
+              <option disabled value="">Select storage</option>
+              <option
+                v-for="storage in storageStore.items"
+                :key="storage.uuid"
+                :value="storage.uuid"
+              >
+                {{ storage.name }}
+              </option>
+            </select>
+          </label>
+          <div class="form-actions">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="repositoryStore.saving || !hasStorage"
+            >
+              {{ editingRepositoryUuid ? 'Save changes' : 'Create repository' }}
+            </button>
+            <button
+              v-if="editingRepositoryUuid"
+              class="secondary-button"
+              type="button"
+              @click="resetRepositoryForm"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="table-panel" aria-label="Repository list">
+        <div v-if="repositoryStore.loading" class="notice">Loading repositories...</div>
+        <div v-else-if="!hasRepositories" class="empty-state">
+          No repositories have been created.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Storage</th>
+              <th>Path</th>
+              <th>Status</th>
+              <th>Last validation</th>
+              <th class="actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="repository in repositoryStore.items" :key="repository.uuid">
+              <td>
+                <strong>{{ repository.name }}</strong>
+                <span>{{ repository.uuid }}</span>
+              </td>
+              <td>{{ storageName(repository.storage_uuid) }}</td>
+              <td>{{ repository.path }}</td>
+              <td>
+                <span :class="['status-pill', repository.status]">
+                  {{ repository.status }}
+                </span>
+                <small v-if="repository.validation_message">
+                  {{ repository.validation_message }}
+                </small>
+              </td>
+              <td>
+                {{
+                  repository.last_validated_at
+                    ? new Date(repository.last_validated_at).toLocaleString()
+                    : 'Not validated'
+                }}
+              </td>
+              <td class="row-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  @click="editRepository(repository)"
+                >
+                  Edit
+                </button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="repositoryStore.validatingUuid === repository.uuid"
+                  @click="repositoryStore.validateRepository(repository.uuid)"
+                >
+                  Validate
+                </button>
+                <button
+                  class="danger-button"
+                  type="button"
+                  @click="deleteRepository(repository.uuid)"
                 >
                   Delete
                 </button>
