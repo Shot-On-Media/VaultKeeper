@@ -7,9 +7,9 @@ from sqlalchemy import create_engine, pool
 from alembic import context
 from app.core.config import get_settings
 from app.database.base import Base
-from app.models import Storage
+from app.models import Repository, Storage
 
-_ = Storage
+_ = (Repository, Storage)
 
 config = context.config
 settings = get_settings()
