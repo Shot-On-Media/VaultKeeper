@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import redis
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -16,3 +18,8 @@ SessionLocal = sessionmaker(
     class_=Session,
 )
 redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+
+
+def get_database_session() -> Generator[Session]:
+    with SessionLocal() as session:
+        yield session

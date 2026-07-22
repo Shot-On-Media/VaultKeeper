@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 
 class Settings(BaseSettings):
@@ -19,17 +20,21 @@ class Settings(BaseSettings):
     app_env: str = "development"
     db_host: str = "mariadb"
     db_port: int = 3306
-    db_name: str
-    db_user: str
-    db_password: str = Field(repr=False)
+    db_name: str = "vaultkeeper"
+    db_user: str = "vaultkeeper"
+    db_password: str = Field(default="change-me", repr=False)
     redis_url: str = "redis://redis:6379/0"
 
     @property
     def database_url(self) -> str:
-        return (
-            f"mysql+pymysql://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}"
-        )
+        return URL.create(
+            drivername="mysql+pymysql",
+            username=self.db_user,
+            password=self.db_password,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+        ).render_as_string(hide_password=False)
 
 
 @lru_cache
