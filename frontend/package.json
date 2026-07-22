@@ -9,8 +9,13 @@
   },
   "dependencies": {
     "@vitejs/plugin-vue": "latest",
+    "axios": "latest",
+    "pinia": "latest",
     "vite": "latest",
-    "vue": "latest"
+    "vue": "latest",
+    "vue-router": "latest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "typescript": "latest"
+  }
 }
