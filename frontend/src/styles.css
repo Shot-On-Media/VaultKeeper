@@ -181,6 +181,13 @@ select:focus {
   align-items: end;
 }
 
+.snapshot-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(160px, 220px) minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+}
+
 .form-actions,
 .row-actions {
   display: flex;
@@ -285,6 +292,26 @@ td small {
   background: #f8d7da;
 }
 
+.status-pill.pending {
+  color: #684600;
+  background: #fff3cd;
+}
+
+.status-pill.running {
+  color: #084298;
+  background: #cfe2ff;
+}
+
+.status-pill.completed {
+  color: #0f5132;
+  background: #d1e7dd;
+}
+
+.status-pill.failed {
+  color: #842029;
+  background: #f8d7da;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -299,6 +326,10 @@ td small {
   }
 
   .repository-form {
+    grid-template-columns: 1fr;
+  }
+
+  .snapshot-form {
     grid-template-columns: 1fr;
   }
 

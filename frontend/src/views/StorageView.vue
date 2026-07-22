@@ -2,10 +2,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { RepositoryLocation, useRepositoryStore } from '../stores/repository'
+import { useSnapshotStore } from '../stores/snapshot'
 import { StorageLocation, useStorageStore } from '../stores/storage'
 
 const storageStore = useStorageStore()
 const repositoryStore = useRepositoryStore()
+const snapshotStore = useSnapshotStore()
 const editingUuid = ref<string | null>(null)
 const editingRepositoryUuid = ref<string | null>(null)
 const form = reactive({
@@ -16,9 +18,15 @@ const repositoryForm = reactive({
   name: '',
   storageUuid: '',
 })
+const snapshotForm = reactive({
+  repositoryUuid: '',
+  engine: 'framework',
+  source: '',
+})
 
 const hasStorage = computed(() => storageStore.items.length > 0)
 const hasRepositories = computed(() => repositoryStore.items.length > 0)
+const hasSnapshots = computed(() => snapshotStore.items.length > 0)
 const validCount = computed(
   () => storageStore.items.filter((item) => item.status === 'valid').length,
 )
@@ -28,10 +36,14 @@ const invalidCount = computed(
 const validRepositoryCount = computed(
   () => repositoryStore.items.filter((item) => item.status === 'valid').length,
 )
+const completedSnapshotCount = computed(
+  () => snapshotStore.items.filter((item) => item.status === 'completed').length,
+)
 
 onMounted(() => {
   void storageStore.loadStorage()
   void repositoryStore.loadRepositories()
+  void snapshotStore.loadSnapshots()
 })
 
 function resetForm(): void {
@@ -66,6 +78,13 @@ function storageName(storageUuid: string): string {
   return storageStore.items.find((storage) => storage.uuid === storageUuid)?.name ?? storageUuid
 }
 
+function repositoryName(repositoryUuid: string): string {
+  return (
+    repositoryStore.items.find((repository) => repository.uuid === repositoryUuid)?.name ??
+    repositoryUuid
+  )
+}
+
 function resetRepositoryForm(): void {
   editingRepositoryUuid.value = null
   repositoryForm.name = ''
@@ -93,6 +112,17 @@ async function deleteRepository(repositoryUuid: string): Promise<void> {
     resetRepositoryForm()
   }
 }
+
+function resetSnapshotForm(): void {
+  snapshotForm.repositoryUuid = ''
+  snapshotForm.engine = 'framework'
+  snapshotForm.source = ''
+}
+
+async function registerSnapshot(): Promise<void> {
+  await snapshotStore.registerSnapshot(snapshotForm)
+  resetSnapshotForm()
+}
 </script>
 
 <template>
@@ -105,6 +135,7 @@ async function deleteRepository(repositoryUuid: string): Promise<void> {
       <nav class="nav-list" aria-label="Primary">
         <a class="nav-item active" href="#storage">Storage</a>
         <a class="nav-item" href="#repositories">Repositories</a>
+        <a class="nav-item" href="#snapshots">Snapshots</a>
       </nav>
       <dl class="summary-list">
         <div>
@@ -126,6 +157,14 @@ async function deleteRepository(repositoryUuid: string): Promise<void> {
         <div>
           <dt>Repo Valid</dt>
           <dd>{{ validRepositoryCount }}</dd>
+        </div>
+        <div>
+          <dt>Snapshots</dt>
+          <dd>{{ snapshotStore.items.length }}</dd>
+        </div>
+        <div>
+          <dt>Completed</dt>
+          <dd>{{ completedSnapshotCount }}</dd>
         </div>
       </dl>
     </aside>
@@ -357,6 +396,132 @@ async function deleteRepository(repositoryUuid: string): Promise<void> {
                   @click="deleteRepository(repository.uuid)"
                 >
                   Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <header id="snapshots" class="page-header">
+        <div>
+          <p class="eyebrow">Milestone 3</p>
+          <h2>Snapshot History</h2>
+        </div>
+        <button
+          class="secondary-button"
+          type="button"
+          @click="snapshotStore.loadSnapshots()"
+        >
+          Refresh
+        </button>
+      </header>
+
+      <div v-if="snapshotStore.error" class="notice error">
+        {{ snapshotStore.error }}
+      </div>
+
+      <section class="form-panel" aria-label="Snapshot registration form">
+        <form class="snapshot-form" @submit.prevent="registerSnapshot">
+          <label>
+            <span>Repository</span>
+            <select v-model="snapshotForm.repositoryUuid" required>
+              <option disabled value="">Select repository</option>
+              <option
+                v-for="repository in repositoryStore.items"
+                :key="repository.uuid"
+                :value="repository.uuid"
+              >
+                {{ repository.name }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>Engine</span>
+            <input v-model="snapshotForm.engine" required maxlength="80" />
+          </label>
+          <label>
+            <span>Source</span>
+            <input v-model="snapshotForm.source" required placeholder="/srv/data" />
+          </label>
+          <div class="form-actions">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="snapshotStore.saving || !hasRepositories"
+            >
+              Register snapshot
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="table-panel" aria-label="Snapshot history">
+        <div v-if="snapshotStore.loading" class="notice">Loading snapshots...</div>
+        <div v-else-if="!hasSnapshots" class="empty-state">
+          No snapshots have been registered.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Snapshot</th>
+              <th>Repository</th>
+              <th>Engine</th>
+              <th>Source</th>
+              <th>Status</th>
+              <th class="actions-column">Lifecycle</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="snapshot in snapshotStore.items" :key="snapshot.uuid">
+              <td>
+                <strong>{{ snapshot.uuid }}</strong>
+                <span>{{ new Date(snapshot.created_at).toLocaleString() }}</span>
+              </td>
+              <td>{{ repositoryName(snapshot.repository_uuid) }}</td>
+              <td>{{ snapshot.engine }}</td>
+              <td>{{ snapshot.source }}</td>
+              <td>
+                <span :class="['status-pill', snapshot.status]">
+                  {{ snapshot.status }}
+                </span>
+                <small v-if="snapshot.failure_message">
+                  {{ snapshot.failure_message }}
+                </small>
+              </td>
+              <td class="row-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="
+                    snapshot.status !== 'pending' ||
+                    snapshotStore.transitioningUuid === snapshot.uuid
+                  "
+                  @click="snapshotStore.startSnapshot(snapshot.uuid)"
+                >
+                  Start
+                </button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="
+                    snapshot.status !== 'running' ||
+                    snapshotStore.transitioningUuid === snapshot.uuid
+                  "
+                  @click="snapshotStore.completeSnapshot(snapshot.uuid)"
+                >
+                  Complete
+                </button>
+                <button
+                  class="danger-button"
+                  type="button"
+                  :disabled="
+                    snapshot.status === 'completed' ||
+                    snapshotStore.transitioningUuid === snapshot.uuid
+                  "
+                  @click="snapshotStore.failSnapshot(snapshot.uuid)"
+                >
+                  Fail
                 </button>
               </td>
             </tr>
