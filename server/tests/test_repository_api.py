@@ -127,3 +127,28 @@ def test_repository_requires_existing_storage(client: TestClient) -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_repository_with_snapshots_cannot_be_deleted(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    storage_uuid = create_storage(client, tmp_path)
+    repository_response = client.post(
+        "/api/v1/repositories",
+        json={"name": "Primary repository", "storage_uuid": storage_uuid},
+    )
+    repository_uuid = repository_response.json()["uuid"]
+    snapshot_response = client.post(
+        "/api/v1/snapshots",
+        json={
+            "repository_uuid": repository_uuid,
+            "engine": "test_engine",
+            "source": "/srv/data",
+        },
+    )
+
+    assert snapshot_response.status_code == 201
+    response = client.delete(f"/api/v1/repositories/{repository_uuid}")
+
+    assert response.status_code == 409

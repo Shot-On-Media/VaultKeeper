@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.drivers.storage.registry import get_storage_driver
 from app.models.storage import Storage
+from app.repositories.repository import RepositoryRepository
 from app.repositories.storage import StorageRepository
 from app.schemas.storage import (
     StorageCreate,
@@ -21,6 +22,7 @@ from app.schemas.storage import (
 class StorageService:
     def __init__(self, session: Session) -> None:
         self.repository = StorageRepository(session)
+        self.repository_repository = RepositoryRepository(session)
         self.session = session
 
     def list_storage(self) -> list[StorageResponse]:
@@ -60,6 +62,11 @@ class StorageService:
 
     def delete_storage(self, storage_uuid: str) -> None:
         storage = self._get_storage(storage_uuid)
+        if self.repository_repository.list_by_storage_uuid(storage_uuid):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storage has repositories and cannot be deleted.",
+            )
         self.repository.delete(storage)
         self.session.commit()
 

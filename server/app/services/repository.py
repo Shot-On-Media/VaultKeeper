@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.repository import Repository
 from app.models.storage import Storage
 from app.repositories.repository import RepositoryRepository
+from app.repositories.snapshot import SnapshotRepository
 from app.repositories.storage import StorageRepository
 from app.schemas.repository import (
     RepositoryCreate,
@@ -26,6 +27,7 @@ REPOSITORY_DIRECTORIES = ("snapshots", "logs", "verify", "temp", "locks")
 class RepositoryService:
     def __init__(self, session: Session) -> None:
         self.repository = RepositoryRepository(session)
+        self.snapshot_repository = SnapshotRepository(session)
         self.storage_repository = StorageRepository(session)
         self.session = session
 
@@ -70,6 +72,11 @@ class RepositoryService:
 
     def delete_repository(self, repository_uuid: str) -> None:
         repository = self._get_repository(repository_uuid)
+        if self.snapshot_repository.list(repository_uuid):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Repository has snapshots and cannot be deleted.",
+            )
         self.repository.delete(repository)
         self.session.commit()
 

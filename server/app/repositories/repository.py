@@ -21,6 +21,15 @@ class RepositoryRepository:
     def get_by_name(self, name: str) -> Repository | None:
         return self.session.scalar(select(Repository).where(Repository.name == name))
 
+    def list_by_storage_uuid(self, storage_uuid: str) -> list[Repository]:
+        return list(
+            self.session.scalars(
+                select(Repository).where(
+                    Repository.storage.has(uuid=storage_uuid),
+                )
+            )
+        )
+
     def add(self, repository: Repository) -> Repository:
         self.session.add(repository)
         self.session.flush()

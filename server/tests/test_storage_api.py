@@ -131,3 +131,27 @@ def test_storage_names_must_be_unique(
     response = client.post("/api/v1/storage", json=payload)
 
     assert response.status_code == 409
+
+
+def test_storage_with_repositories_cannot_be_deleted(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    storage_response = client.post(
+        "/api/v1/storage",
+        json={
+            "name": "Local backups",
+            "driver": "local_filesystem",
+            "config": {"path": str(tmp_path)},
+        },
+    )
+    storage_uuid = storage_response.json()["uuid"]
+    repository_response = client.post(
+        "/api/v1/repositories",
+        json={"name": "Primary repository", "storage_uuid": storage_uuid},
+    )
+
+    assert repository_response.status_code == 201
+    response = client.delete(f"/api/v1/storage/{storage_uuid}")
+
+    assert response.status_code == 409
