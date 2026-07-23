@@ -25,6 +25,11 @@ export interface SnapshotForm {
   source: string
 }
 
+export interface FilesystemBackupForm {
+  repositoryUuid: string
+  sourcePath: string
+}
+
 interface SnapshotState {
   items: SnapshotRecord[]
   loading: boolean
@@ -66,6 +71,25 @@ export const useSnapshotStore = defineStore('snapshot', {
         this.items = [response.data, ...this.items]
       } catch (error) {
         this.error = 'Snapshot could not be registered.'
+        throw error
+      } finally {
+        this.saving = false
+      }
+    },
+    async runFilesystemBackup(form: FilesystemBackupForm): Promise<void> {
+      this.saving = true
+      this.error = null
+      try {
+        const response = await api.post<{ snapshot: SnapshotRecord }>(
+          '/filesystem-backups',
+          {
+            repository_uuid: form.repositoryUuid,
+            source_path: form.sourcePath,
+          },
+        )
+        this.items = [response.data.snapshot, ...this.items]
+      } catch (error) {
+        this.error = 'Filesystem backup could not be completed.'
         throw error
       } finally {
         this.saving = false

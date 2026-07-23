@@ -123,6 +123,14 @@ async function registerSnapshot(): Promise<void> {
   await snapshotStore.registerSnapshot(snapshotForm)
   resetSnapshotForm()
 }
+
+async function runFilesystemBackup(): Promise<void> {
+  await snapshotStore.runFilesystemBackup({
+    repositoryUuid: snapshotForm.repositoryUuid,
+    sourcePath: snapshotForm.source,
+  })
+  resetSnapshotForm()
+}
 </script>
 
 <template>
@@ -446,11 +454,19 @@ async function registerSnapshot(): Promise<void> {
           </label>
           <div class="form-actions">
             <button
-              class="primary-button"
+              class="secondary-button"
               type="submit"
               :disabled="snapshotStore.saving || !hasRepositories"
             >
               Register snapshot
+            </button>
+            <button
+              class="primary-button"
+              type="button"
+              :disabled="snapshotStore.saving || !hasRepositories"
+              @click="runFilesystemBackup"
+            >
+              Run filesystem backup
             </button>
           </div>
         </form>
