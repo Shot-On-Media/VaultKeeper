@@ -23,6 +23,10 @@ const snapshotForm = reactive({
   engine: 'framework',
   source: '',
 })
+const mariaDBForm = reactive({
+  repositoryUuid: '',
+  databaseName: '',
+})
 
 const hasStorage = computed(() => storageStore.items.length > 0)
 const hasRepositories = computed(() => repositoryStore.items.length > 0)
@@ -44,6 +48,7 @@ onMounted(() => {
   void storageStore.loadStorage()
   void repositoryStore.loadRepositories()
   void snapshotStore.loadSnapshots()
+  void snapshotStore.loadMariaDBDatabases()
 })
 
 function resetForm(): void {
@@ -119,6 +124,11 @@ function resetSnapshotForm(): void {
   snapshotForm.source = ''
 }
 
+function resetMariaDBForm(): void {
+  mariaDBForm.repositoryUuid = ''
+  mariaDBForm.databaseName = ''
+}
+
 async function registerSnapshot(): Promise<void> {
   await snapshotStore.registerSnapshot(snapshotForm)
   resetSnapshotForm()
@@ -130,6 +140,11 @@ async function runFilesystemBackup(): Promise<void> {
     sourcePath: snapshotForm.source,
   })
   resetSnapshotForm()
+}
+
+async function runMariaDBBackup(): Promise<void> {
+  await snapshotStore.runMariaDBBackup(mariaDBForm)
+  resetMariaDBForm()
 }
 </script>
 
@@ -467,6 +482,54 @@ async function runFilesystemBackup(): Promise<void> {
               @click="runFilesystemBackup"
             >
               Run filesystem backup
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="form-panel" aria-label="MariaDB backup form">
+        <form class="mariadb-form" @submit.prevent="runMariaDBBackup">
+          <label>
+            <span>Repository</span>
+            <select v-model="mariaDBForm.repositoryUuid" required>
+              <option disabled value="">Select repository</option>
+              <option
+                v-for="repository in repositoryStore.items"
+                :key="repository.uuid"
+                :value="repository.uuid"
+              >
+                {{ repository.name }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>Database</span>
+            <select v-model="mariaDBForm.databaseName">
+              <option value="">Configured default</option>
+              <option
+                v-for="databaseName in snapshotStore.mariaDBDatabases"
+                :key="databaseName"
+                :value="databaseName"
+              >
+                {{ databaseName }}
+              </option>
+            </select>
+          </label>
+          <div class="form-actions">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="snapshotStore.saving || !hasRepositories"
+            >
+              Run MariaDB backup
+            </button>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="snapshotStore.discoveringDatabases"
+              @click="snapshotStore.loadMariaDBDatabases()"
+            >
+              Discover databases
             </button>
           </div>
         </form>

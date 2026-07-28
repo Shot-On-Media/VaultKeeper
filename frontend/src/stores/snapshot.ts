@@ -30,10 +30,17 @@ export interface FilesystemBackupForm {
   sourcePath: string
 }
 
+export interface MariaDBBackupForm {
+  repositoryUuid: string
+  databaseName: string
+}
+
 interface SnapshotState {
   items: SnapshotRecord[]
+  mariaDBDatabases: string[]
   loading: boolean
   saving: boolean
+  discoveringDatabases: boolean
   transitioningUuid: string | null
   error: string | null
 }
@@ -41,8 +48,10 @@ interface SnapshotState {
 export const useSnapshotStore = defineStore('snapshot', {
   state: (): SnapshotState => ({
     items: [],
+    mariaDBDatabases: [],
     loading: false,
     saving: false,
+    discoveringDatabases: false,
     transitioningUuid: null,
     error: null,
   }),
@@ -71,6 +80,39 @@ export const useSnapshotStore = defineStore('snapshot', {
         this.items = [response.data, ...this.items]
       } catch (error) {
         this.error = 'Snapshot could not be registered.'
+        throw error
+      } finally {
+        this.saving = false
+      }
+    },
+    async loadMariaDBDatabases(): Promise<void> {
+      this.discoveringDatabases = true
+      this.error = null
+      try {
+        const response = await api.get<{ databases: string[] }>(
+          '/mariadb-backups/databases',
+        )
+        this.mariaDBDatabases = response.data.databases
+      } catch (error) {
+        this.error = 'MariaDB databases could not be discovered.'
+      } finally {
+        this.discoveringDatabases = false
+      }
+    },
+    async runMariaDBBackup(form: MariaDBBackupForm): Promise<void> {
+      this.saving = true
+      this.error = null
+      try {
+        const response = await api.post<{ snapshot: SnapshotRecord }>(
+          '/mariadb-backups',
+          {
+            repository_uuid: form.repositoryUuid,
+            database_name: form.databaseName || null,
+          },
+        )
+        this.items = [response.data.snapshot, ...this.items]
+      } catch (error) {
+        this.error = 'MariaDB backup could not be completed.'
         throw error
       } finally {
         this.saving = false

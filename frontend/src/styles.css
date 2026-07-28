@@ -188,6 +188,13 @@ select:focus {
   align-items: end;
 }
 
+.mariadb-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(200px, 280px) auto;
+  gap: 14px;
+  align-items: end;
+}
+
 .form-actions,
 .row-actions {
   display: flex;
@@ -330,6 +337,10 @@ td small {
   }
 
   .snapshot-form {
+    grid-template-columns: 1fr;
+  }
+
+  .mariadb-form {
     grid-template-columns: 1fr;
   }
 
