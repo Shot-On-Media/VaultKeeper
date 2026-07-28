@@ -6,6 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY server/requirements.txt ./requirements.txt
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y mariadb-client \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
