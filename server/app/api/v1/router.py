@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.filesystem_backups import router as filesystem_backups_router
 from app.api.v1.mariadb_backups import router as mariadb_backups_router
 from app.api.v1.repositories import router as repositories_router
@@ -14,6 +15,7 @@ from app.api.v1.verification import router as verification_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(system_router)
+router.include_router(dashboard_router)
 router.include_router(storage_router)
 router.include_router(repositories_router)
 router.include_router(snapshots_router)
