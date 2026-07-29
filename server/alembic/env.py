@@ -14,9 +14,18 @@ from app.models import (
     RestoreJob,
     Snapshot,
     Storage,
+    VerificationReport,
 )
 
-_ = (BackupJob, BackupPolicy, Repository, RestoreJob, Snapshot, Storage)
+_ = (
+    BackupJob,
+    BackupPolicy,
+    Repository,
+    RestoreJob,
+    Snapshot,
+    Storage,
+    VerificationReport,
+)
 
 config = context.config
 settings = get_settings()

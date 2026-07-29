@@ -134,3 +134,4 @@ def test_mariadb_backup_creates_completed_snapshot(
     assert payload["snapshot"]["engine"] == "mariadb"
     assert payload["snapshot"]["status"] == "completed"
     assert payload["snapshot"]["manifest"]["artifact"] == artifact_path.name
+    assert payload["snapshot"]["manifest"]["sha256"]

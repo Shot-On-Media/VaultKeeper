@@ -12,6 +12,7 @@ from app.schemas.filesystem_backup import (
     FilesystemBackupResponse,
 )
 from app.schemas.snapshot import SnapshotComplete, SnapshotCreate, SnapshotFail
+from app.services.checksum import sha256_file
 from app.services.repository import REPOSITORY_DIRECTORIES
 from app.services.snapshot import SnapshotService
 
@@ -63,6 +64,7 @@ class FilesystemBackupService:
             self.driver.compress_zstd(tar_path, artifact_path)
             tar_path.unlink()
             compressed_bytes = artifact_path.stat().st_size
+            checksum = sha256_file(artifact_path)
             snapshot = self.snapshot_service.complete_snapshot(
                 snapshot.uuid,
                 SnapshotComplete(
@@ -72,6 +74,7 @@ class FilesystemBackupService:
                         "compression": "zstd",
                         "format": "tar",
                         "file_count": scan_result.file_count,
+                        "sha256": checksum,
                         "source_bytes": scan_result.total_bytes,
                     },
                 ),

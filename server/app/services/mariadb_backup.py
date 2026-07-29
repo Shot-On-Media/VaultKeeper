@@ -12,6 +12,7 @@ from app.drivers.snapshot.mariadb import MariaDBConnectionConfig, MariaDBSnapsho
 from app.repositories.repository import RepositoryRepository
 from app.schemas.mariadb_backup import MariaDBBackupCreate, MariaDBBackupResponse
 from app.schemas.snapshot import SnapshotComplete, SnapshotCreate, SnapshotFail
+from app.services.checksum import sha256_file
 from app.services.repository import REPOSITORY_DIRECTORIES
 from app.services.snapshot import SnapshotService
 
@@ -74,6 +75,7 @@ class MariaDBBackupService:
             self.driver.compress_zstd(dump_path, artifact_path)
             dump_path.unlink()
             compressed_bytes = artifact_path.stat().st_size
+            checksum = sha256_file(artifact_path)
             snapshot = self.snapshot_service.complete_snapshot(
                 snapshot.uuid,
                 SnapshotComplete(
@@ -83,6 +85,7 @@ class MariaDBBackupService:
                         "compression": "zstd",
                         "database": database_name,
                         "format": "sql",
+                        "sha256": checksum,
                         "source_bytes": dump_bytes,
                     },
                 ),

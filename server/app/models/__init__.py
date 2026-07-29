@@ -5,6 +5,7 @@ from app.models.restore import RestoreJob
 from app.models.scheduler import BackupJob, BackupPolicy
 from app.models.snapshot import Snapshot
 from app.models.storage import Storage
+from app.models.verification import VerificationReport
 
 __all__ = [
     "BackupJob",
@@ -13,4 +14,5 @@ __all__ = [
     "RestoreJob",
     "Snapshot",
     "Storage",
+    "VerificationReport",
 ]

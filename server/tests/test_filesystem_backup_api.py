@@ -108,6 +108,7 @@ def test_filesystem_backup_creates_completed_snapshot(
     assert payload["snapshot"]["engine"] == "filesystem"
     assert payload["snapshot"]["status"] == "completed"
     assert payload["snapshot"]["manifest"]["artifact"] == artifact_path.name
+    assert payload["snapshot"]["manifest"]["sha256"]
 
 
 def test_filesystem_backup_requires_existing_source(
