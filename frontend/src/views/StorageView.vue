@@ -6,12 +6,14 @@ import { useRestoreStore } from '../stores/restore'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useSnapshotStore } from '../stores/snapshot'
 import { StorageLocation, useStorageStore } from '../stores/storage'
+import { useVerificationStore } from '../stores/verification'
 
 const storageStore = useStorageStore()
 const repositoryStore = useRepositoryStore()
 const restoreStore = useRestoreStore()
 const schedulerStore = useSchedulerStore()
 const snapshotStore = useSnapshotStore()
+const verificationStore = useVerificationStore()
 const editingUuid = ref<string | null>(null)
 const editingRepositoryUuid = ref<string | null>(null)
 const form = reactive({
@@ -67,6 +69,9 @@ const hasRestores = computed(() => restoreStore.items.length > 0)
 const completedRestoreCount = computed(
   () => restoreStore.items.filter((item) => item.status === 'completed').length,
 )
+const failedVerificationCount = computed(
+  () => verificationStore.reports.filter((item) => item.status === 'failed').length,
+)
 const runningJobCount = computed(
   () => schedulerStore.jobs.filter((item) => item.status === 'running').length,
 )
@@ -78,6 +83,7 @@ onMounted(() => {
   void snapshotStore.loadMariaDBDatabases()
   void restoreStore.loadRestores()
   void schedulerStore.loadScheduler()
+  void verificationStore.loadReports()
 })
 
 function resetForm(): void {
@@ -222,6 +228,7 @@ async function createRestore(): Promise<void> {
         <a class="nav-item" href="#repositories">Repositories</a>
         <a class="nav-item" href="#snapshots">Snapshots</a>
         <a class="nav-item" href="#restores">Restores</a>
+        <a class="nav-item" href="#verification">Verification</a>
         <a class="nav-item" href="#scheduler">Scheduler</a>
       </nav>
       <dl class="summary-list">
@@ -260,6 +267,14 @@ async function createRestore(): Promise<void> {
         <div>
           <dt>Restored</dt>
           <dd>{{ completedRestoreCount }}</dd>
+        </div>
+        <div>
+          <dt>Reports</dt>
+          <dd>{{ verificationStore.reports.length }}</dd>
+        </div>
+        <div>
+          <dt>Integrity Failed</dt>
+          <dd>{{ failedVerificationCount }}</dd>
         </div>
         <div>
           <dt>Schedules</dt>
@@ -782,6 +797,150 @@ async function createRestore(): Promise<void> {
                     : 'Not completed'
                 }}
               </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <header id="verification" class="page-header">
+        <div>
+          <p class="eyebrow">Milestone 8</p>
+          <h2>Verification</h2>
+        </div>
+        <button
+          class="secondary-button"
+          type="button"
+          @click="verificationStore.loadReports()"
+        >
+          Refresh
+        </button>
+      </header>
+
+      <div v-if="verificationStore.error" class="notice error">
+        {{ verificationStore.error }}
+      </div>
+
+      <section class="table-panel" aria-label="Repository verification">
+        <div v-if="!hasRepositories" class="empty-state">
+          No repositories are available for verification.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Repository</th>
+              <th>Status</th>
+              <th>Last validation</th>
+              <th class="actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="repository in repositoryStore.items" :key="repository.uuid">
+              <td>
+                <strong>{{ repository.name }}</strong>
+                <span>{{ repository.path }}</span>
+              </td>
+              <td>
+                <span :class="['status-pill', repository.status]">
+                  {{ repository.status }}
+                </span>
+                <small v-if="repository.validation_message">
+                  {{ repository.validation_message }}
+                </small>
+              </td>
+              <td>
+                {{
+                  repository.last_validated_at
+                    ? new Date(repository.last_validated_at).toLocaleString()
+                    : 'Not validated'
+                }}
+              </td>
+              <td class="row-actions">
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="verificationStore.runningUuid === repository.uuid"
+                  @click="verificationStore.verifyRepository(repository.uuid)"
+                >
+                  Verify integrity
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="table-panel" aria-label="Snapshot verification">
+        <div v-if="completedSnapshots.length === 0" class="empty-state">
+          No completed snapshots are available for verification.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Snapshot</th>
+              <th>Repository</th>
+              <th>Engine</th>
+              <th>Source</th>
+              <th class="actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="snapshot in completedSnapshots" :key="snapshot.uuid">
+              <td>
+                <strong>{{ snapshot.uuid }}</strong>
+                <span>{{ new Date(snapshot.created_at).toLocaleString() }}</span>
+              </td>
+              <td>{{ repositoryName(snapshot.repository_uuid) }}</td>
+              <td>{{ snapshot.engine }}</td>
+              <td>{{ snapshot.source }}</td>
+              <td class="row-actions">
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="verificationStore.runningUuid === snapshot.uuid"
+                  @click="verificationStore.verifySnapshot(snapshot.uuid)"
+                >
+                  Verify snapshot
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="table-panel" aria-label="Verification reports">
+        <div v-if="verificationStore.loading" class="notice">
+          Loading verification reports...
+        </div>
+        <div v-else-if="verificationStore.reports.length === 0" class="empty-state">
+          No verification reports have been generated.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Scope</th>
+              <th>Repository</th>
+              <th>Status</th>
+              <th>Checks</th>
+              <th>Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="report in verificationStore.reports" :key="report.uuid">
+              <td>
+                <strong>{{ report.uuid }}</strong>
+                <span v-if="report.snapshot_uuid">{{ report.snapshot_uuid }}</span>
+              </td>
+              <td>{{ report.scope }}</td>
+              <td>{{ repositoryName(report.repository_uuid) }}</td>
+              <td>
+                <span :class="['status-pill', report.status]">
+                  {{ report.status }}
+                </span>
+                <small>{{ report.message }}</small>
+              </td>
+              <td>{{ report.checked_count }} checked / {{ report.failed_count }} failed</td>
+              <td>{{ new Date(report.created_at).toLocaleString() }}</td>
             </tr>
           </tbody>
         </table>

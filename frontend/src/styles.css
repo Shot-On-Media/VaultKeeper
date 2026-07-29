@@ -310,12 +310,22 @@ td small {
   background: #d1e7dd;
 }
 
+.status-pill.passed {
+  color: #0f5132;
+  background: #d1e7dd;
+}
+
 .status-pill.invalid {
   color: #842029;
   background: #f8d7da;
 }
 
 .status-pill.pending {
+  color: #684600;
+  background: #fff3cd;
+}
+
+.status-pill.warning {
   color: #684600;
   background: #fff3cd;
 }
