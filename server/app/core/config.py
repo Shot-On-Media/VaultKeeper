@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     db_user: str = "vaultkeeper"
     db_password: str = Field(default="change-me", repr=False)
     redis_url: str = "redis://redis:6379/0"
+    scheduler_enabled: bool = False
+    scheduler_interval_seconds: int = 60
 
     @property
     def database_url(self) -> str:

@@ -42,6 +42,8 @@ services:
       VK_DB_USER: ${VK_DB_USER}
       VK_DB_PASSWORD: ${VK_DB_PASSWORD}
       VK_REDIS_URL: redis://redis:6379/0
+      VK_SCHEDULER_ENABLED: "true"
+      VK_SCHEDULER_INTERVAL_SECONDS: 10
     depends_on:
       mariadb:
         condition: service_healthy
