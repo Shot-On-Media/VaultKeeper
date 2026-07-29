@@ -2,12 +2,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { RepositoryLocation, useRepositoryStore } from '../stores/repository'
+import { useRestoreStore } from '../stores/restore'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useSnapshotStore } from '../stores/snapshot'
 import { StorageLocation, useStorageStore } from '../stores/storage'
 
 const storageStore = useStorageStore()
 const repositoryStore = useRepositoryStore()
+const restoreStore = useRestoreStore()
 const schedulerStore = useSchedulerStore()
 const snapshotStore = useSnapshotStore()
 const editingUuid = ref<string | null>(null)
@@ -38,6 +40,10 @@ const policyForm = reactive({
   nextRunAt: new Date(Date.now() + 60000).toISOString().slice(0, 16),
   maxRetries: 2,
 })
+const restoreForm = reactive({
+  snapshotUuid: '',
+  targetPath: '',
+})
 
 const hasStorage = computed(() => storageStore.items.length > 0)
 const hasRepositories = computed(() => repositoryStore.items.length > 0)
@@ -54,6 +60,13 @@ const validRepositoryCount = computed(
 const completedSnapshotCount = computed(
   () => snapshotStore.items.filter((item) => item.status === 'completed').length,
 )
+const completedSnapshots = computed(() =>
+  snapshotStore.items.filter((item) => item.status === 'completed'),
+)
+const hasRestores = computed(() => restoreStore.items.length > 0)
+const completedRestoreCount = computed(
+  () => restoreStore.items.filter((item) => item.status === 'completed').length,
+)
 const runningJobCount = computed(
   () => schedulerStore.jobs.filter((item) => item.status === 'running').length,
 )
@@ -63,6 +76,7 @@ onMounted(() => {
   void repositoryStore.loadRepositories()
   void snapshotStore.loadSnapshots()
   void snapshotStore.loadMariaDBDatabases()
+  void restoreStore.loadRestores()
   void schedulerStore.loadScheduler()
 })
 
@@ -103,6 +117,14 @@ function repositoryName(repositoryUuid: string): string {
     repositoryStore.items.find((repository) => repository.uuid === repositoryUuid)?.name ??
     repositoryUuid
   )
+}
+
+function snapshotLabel(snapshotUuid: string): string {
+  const snapshot = snapshotStore.items.find((item) => item.uuid === snapshotUuid)
+  if (snapshot === undefined) {
+    return snapshotUuid
+  }
+  return `${snapshot.engine} - ${snapshot.source}`
 }
 
 function resetRepositoryForm(): void {
@@ -176,6 +198,16 @@ async function createPolicy(): Promise<void> {
   await schedulerStore.createPolicy(policyForm)
   resetPolicyForm()
 }
+
+function resetRestoreForm(): void {
+  restoreForm.snapshotUuid = ''
+  restoreForm.targetPath = ''
+}
+
+async function createRestore(): Promise<void> {
+  await restoreStore.createRestore(restoreForm)
+  resetRestoreForm()
+}
 </script>
 
 <template>
@@ -189,6 +221,7 @@ async function createPolicy(): Promise<void> {
         <a class="nav-item active" href="#storage">Storage</a>
         <a class="nav-item" href="#repositories">Repositories</a>
         <a class="nav-item" href="#snapshots">Snapshots</a>
+        <a class="nav-item" href="#restores">Restores</a>
         <a class="nav-item" href="#scheduler">Scheduler</a>
       </nav>
       <dl class="summary-list">
@@ -219,6 +252,14 @@ async function createPolicy(): Promise<void> {
         <div>
           <dt>Completed</dt>
           <dd>{{ completedSnapshotCount }}</dd>
+        </div>
+        <div>
+          <dt>Restores</dt>
+          <dd>{{ restoreStore.items.length }}</dd>
+        </div>
+        <div>
+          <dt>Restored</dt>
+          <dd>{{ completedRestoreCount }}</dd>
         </div>
         <div>
           <dt>Schedules</dt>
@@ -641,6 +682,105 @@ async function createPolicy(): Promise<void> {
                 >
                   Fail
                 </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <header id="restores" class="page-header">
+        <div>
+          <p class="eyebrow">Milestone 7</p>
+          <h2>Restores</h2>
+        </div>
+        <button class="secondary-button" type="button" @click="restoreStore.loadRestores()">
+          Refresh
+        </button>
+      </header>
+
+      <div v-if="restoreStore.error" class="notice error">
+        {{ restoreStore.error }}
+      </div>
+
+      <section class="form-panel" aria-label="Restore form">
+        <form class="restore-form" @submit.prevent="createRestore">
+          <label>
+            <span>Snapshot</span>
+            <select v-model="restoreForm.snapshotUuid" required>
+              <option disabled value="">Select completed snapshot</option>
+              <option
+                v-for="snapshot in completedSnapshots"
+                :key="snapshot.uuid"
+                :value="snapshot.uuid"
+              >
+                {{ snapshot.engine }} - {{ snapshot.source }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>Target path</span>
+            <input v-model="restoreForm.targetPath" required placeholder="/restore/target" />
+          </label>
+          <div class="form-actions">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="restoreStore.saving || completedSnapshots.length === 0"
+            >
+              Restore snapshot
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="table-panel" aria-label="Restore history">
+        <div v-if="restoreStore.loading" class="notice">Loading restore jobs...</div>
+        <div v-else-if="!hasRestores" class="empty-state">
+          No restore jobs have been requested.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Restore</th>
+              <th>Snapshot</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="restore in restoreStore.items" :key="restore.uuid">
+              <td>
+                <strong>{{ restore.uuid }}</strong>
+                <span>{{ new Date(restore.created_at).toLocaleString() }}</span>
+              </td>
+              <td>
+                {{ snapshotLabel(restore.snapshot_uuid) }}
+                <span>{{ restore.snapshot_uuid }}</span>
+              </td>
+              <td>{{ restore.target_path }}</td>
+              <td>
+                <span :class="['status-pill', restore.status]">
+                  {{ restore.status }}
+                </span>
+                <small v-if="restore.verification_message">
+                  {{ restore.verification_message }}
+                </small>
+                <small v-if="restore.error_message">
+                  {{ restore.error_message }}
+                </small>
+              </td>
+              <td>
+                <progress max="100" :value="restore.progress_percent" />
+                <span>{{ restore.progress_percent }}%</span>
+              </td>
+              <td>
+                {{
+                  restore.completed_at
+                    ? new Date(restore.completed_at).toLocaleString()
+                    : 'Not completed'
+                }}
               </td>
             </tr>
           </tbody>
