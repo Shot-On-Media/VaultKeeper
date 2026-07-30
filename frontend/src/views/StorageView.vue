@@ -2,6 +2,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { DashboardMetric, useDashboardStore } from '../stores/dashboard'
+import {
+  NotificationChannel,
+  NotificationDriver,
+  useNotificationStore,
+} from '../stores/notification'
 import { RepositoryLocation, useRepositoryStore } from '../stores/repository'
 import { useRestoreStore } from '../stores/restore'
 import { useSchedulerStore } from '../stores/scheduler'
@@ -11,6 +16,7 @@ import { useVerificationStore } from '../stores/verification'
 
 const storageStore = useStorageStore()
 const dashboardStore = useDashboardStore()
+const notificationStore = useNotificationStore()
 const repositoryStore = useRepositoryStore()
 const restoreStore = useRestoreStore()
 const schedulerStore = useSchedulerStore()
@@ -48,6 +54,17 @@ const restoreForm = reactive({
   snapshotUuid: '',
   targetPath: '',
 })
+const notificationForm = reactive({
+  name: '',
+  driver: 'ntfy' as NotificationDriver,
+  enabled: true,
+  serverUrl: '',
+  topic: '',
+  token: '',
+  url: '',
+  recipient: '',
+})
+const editingNotificationUuid = ref<string | null>(null)
 
 const hasStorage = computed(() => storageStore.items.length > 0)
 const hasRepositories = computed(() => repositoryStore.items.length > 0)
@@ -73,6 +90,9 @@ const completedRestoreCount = computed(
 )
 const failedVerificationCount = computed(
   () => verificationStore.reports.filter((item) => item.status === 'failed').length,
+)
+const failedNotificationCount = computed(
+  () => notificationStore.deliveries.filter((item) => item.status === 'failed').length,
 )
 const runningJobCount = computed(
   () => schedulerStore.jobs.filter((item) => item.status === 'running').length,
@@ -112,6 +132,7 @@ onMounted(() => {
   void restoreStore.loadRestores()
   void schedulerStore.loadScheduler()
   void verificationStore.loadReports()
+  void notificationStore.loadNotifications()
 })
 
 function resetForm(): void {
@@ -183,6 +204,42 @@ function formatBytes(value: number): string {
     unitIndex += 1
   }
   return `${size.toFixed(1)} ${units[unitIndex]}`
+}
+
+function resetNotificationForm(): void {
+  editingNotificationUuid.value = null
+  notificationForm.name = ''
+  notificationForm.driver = 'ntfy'
+  notificationForm.enabled = true
+  notificationForm.serverUrl = ''
+  notificationForm.topic = ''
+  notificationForm.token = ''
+  notificationForm.url = ''
+  notificationForm.recipient = ''
+}
+
+function editNotification(channel: NotificationChannel): void {
+  editingNotificationUuid.value = channel.uuid
+  notificationForm.name = channel.name
+  notificationForm.driver = channel.driver
+  notificationForm.enabled = channel.enabled
+  notificationForm.serverUrl = String(channel.config.server_url ?? '')
+  notificationForm.topic = String(channel.config.topic ?? '')
+  notificationForm.token = ''
+  notificationForm.url = String(channel.config.url ?? '')
+  notificationForm.recipient = String(channel.config.recipient ?? '')
+}
+
+async function saveNotification(): Promise<void> {
+  if (editingNotificationUuid.value === null) {
+    await notificationStore.createChannel(notificationForm)
+  } else {
+    await notificationStore.updateChannel(
+      editingNotificationUuid.value,
+      notificationForm,
+    )
+  }
+  resetNotificationForm()
 }
 
 function resetRepositoryForm(): void {
@@ -282,6 +339,7 @@ async function createRestore(): Promise<void> {
         <a class="nav-item" href="#snapshots">Snapshots</a>
         <a class="nav-item" href="#restores">Restores</a>
         <a class="nav-item" href="#verification">Verification</a>
+        <a class="nav-item" href="#notifications">Notifications</a>
         <a class="nav-item" href="#scheduler">Scheduler</a>
       </nav>
       <dl class="summary-list">
@@ -328,6 +386,10 @@ async function createRestore(): Promise<void> {
         <div>
           <dt>Integrity Failed</dt>
           <dd>{{ failedVerificationCount }}</dd>
+        </div>
+        <div>
+          <dt>Notify Failed</dt>
+          <dd>{{ failedNotificationCount }}</dd>
         </div>
         <div>
           <dt>Schedules</dt>
@@ -1165,6 +1227,198 @@ async function createRestore(): Promise<void> {
               </td>
               <td>{{ report.checked_count }} checked / {{ report.failed_count }} failed</td>
               <td>{{ new Date(report.created_at).toLocaleString() }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <header id="notifications" class="page-header">
+        <div>
+          <p class="eyebrow">Milestone 10</p>
+          <h2>Notifications</h2>
+        </div>
+        <button
+          class="secondary-button"
+          type="button"
+          @click="notificationStore.loadNotifications()"
+        >
+          Refresh
+        </button>
+      </header>
+
+      <div v-if="notificationStore.error" class="notice error">
+        {{ notificationStore.error }}
+      </div>
+
+      <section class="form-panel" aria-label="Notification channel form">
+        <form class="notification-form" @submit.prevent="saveNotification">
+          <label>
+            <span>Name</span>
+            <input v-model="notificationForm.name" required maxlength="120" />
+          </label>
+          <label>
+            <span>Driver</span>
+            <select
+              v-model="notificationForm.driver"
+              :disabled="editingNotificationUuid !== null"
+            >
+              <option value="ntfy">ntfy</option>
+              <option value="webhook">Webhook</option>
+              <option value="email">Email</option>
+            </select>
+          </label>
+          <label v-if="notificationForm.driver === 'ntfy'">
+            <span>Server URL</span>
+            <input
+              v-model="notificationForm.serverUrl"
+              required
+              placeholder="https://ntfy.example.com"
+            />
+          </label>
+          <label v-if="notificationForm.driver === 'ntfy'">
+            <span>Topic</span>
+            <input v-model="notificationForm.topic" required />
+          </label>
+          <label v-if="notificationForm.driver === 'webhook'">
+            <span>Webhook URL</span>
+            <input v-model="notificationForm.url" required />
+          </label>
+          <label v-if="notificationForm.driver === 'email'">
+            <span>Recipient</span>
+            <input v-model="notificationForm.recipient" required type="email" />
+          </label>
+          <label v-if="notificationForm.driver !== 'email'">
+            <span>Token</span>
+            <input v-model="notificationForm.token" type="password" />
+          </label>
+          <label class="checkbox-label">
+            <input v-model="notificationForm.enabled" type="checkbox" />
+            <span>Enabled</span>
+          </label>
+          <div class="form-actions">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="notificationStore.saving"
+            >
+              {{ editingNotificationUuid ? 'Save channel' : 'Create channel' }}
+            </button>
+            <button
+              v-if="editingNotificationUuid"
+              class="secondary-button"
+              type="button"
+              @click="resetNotificationForm"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="table-panel" aria-label="Notification channels">
+        <div v-if="notificationStore.loading" class="notice">
+          Loading notification channels...
+        </div>
+        <div v-else-if="notificationStore.channels.length === 0" class="empty-state">
+          No notification channels have been configured.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Driver</th>
+              <th>Status</th>
+              <th>Target</th>
+              <th class="actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="channel in notificationStore.channels" :key="channel.uuid">
+              <td>
+                <strong>{{ channel.name }}</strong>
+                <span>{{ channel.uuid }}</span>
+              </td>
+              <td>{{ channel.driver }}</td>
+              <td>
+                <span :class="['status-pill', channel.enabled ? 'enabled' : 'disabled']">
+                  {{ channel.enabled ? 'enabled' : 'disabled' }}
+                </span>
+              </td>
+              <td>
+                {{
+                  channel.driver === 'ntfy'
+                    ? `${channel.config.server_url}/${channel.config.topic}`
+                    : channel.driver === 'webhook'
+                      ? channel.config.url
+                      : channel.config.recipient
+                }}
+              </td>
+              <td class="row-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  @click="editNotification(channel)"
+                >
+                  Edit
+                </button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="notificationStore.testingUuid === channel.uuid"
+                  @click="notificationStore.testChannel(channel.uuid)"
+                >
+                  Test
+                </button>
+                <button
+                  class="danger-button"
+                  type="button"
+                  @click="notificationStore.deleteChannel(channel.uuid)"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="table-panel" aria-label="Notification deliveries">
+        <div v-if="notificationStore.deliveries.length === 0" class="empty-state">
+          No notification deliveries have been recorded.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Delivery</th>
+              <th>Channel</th>
+              <th>Event</th>
+              <th>Status</th>
+              <th>Sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="delivery in notificationStore.deliveries" :key="delivery.uuid">
+              <td>
+                <strong>{{ delivery.title }}</strong>
+                <span>{{ delivery.uuid }}</span>
+              </td>
+              <td>{{ delivery.channel_name }}</td>
+              <td>{{ delivery.event_type }}</td>
+              <td>
+                <span :class="['status-pill', delivery.status]">
+                  {{ delivery.status }}
+                </span>
+                <small v-if="delivery.error_message">
+                  {{ delivery.error_message }}
+                </small>
+              </td>
+              <td>
+                {{
+                  delivery.sent_at
+                    ? new Date(delivery.sent_at).toLocaleString()
+                    : new Date(delivery.created_at).toLocaleString()
+                }}
+              </td>
             </tr>
           </tbody>
         </table>

@@ -260,6 +260,27 @@ select:focus {
   align-items: end;
 }
 
+.notification-form {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 260px) minmax(140px, 180px) minmax(220px, 1fr)
+    minmax(180px, 260px);
+  gap: 14px;
+  align-items: end;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.checkbox-label input {
+  width: 18px;
+  height: 18px;
+}
+
 .scheduler-form {
   display: grid;
   grid-template-columns:
@@ -428,6 +449,18 @@ td small {
   background: #cfe2ff;
 }
 
+.status-pill.sent,
+.status-pill.enabled {
+  color: #0f5132;
+  background: #d1e7dd;
+}
+
+.status-pill.skipped,
+.status-pill.disabled {
+  color: #684600;
+  background: #fff3cd;
+}
+
 .status-pill.queued,
 .status-pill.retrying {
   color: #684600;
@@ -471,6 +504,10 @@ progress {
   }
 
   .restore-form {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-form {
     grid-template-columns: 1fr;
   }
 
