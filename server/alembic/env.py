@@ -10,6 +10,8 @@ from app.database.base import Base
 from app.models import (
     BackupJob,
     BackupPolicy,
+    NotificationChannel,
+    NotificationDelivery,
     Repository,
     RestoreJob,
     Snapshot,
@@ -20,6 +22,8 @@ from app.models import (
 _ = (
     BackupJob,
     BackupPolicy,
+    NotificationChannel,
+    NotificationDelivery,
     Repository,
     RestoreJob,
     Snapshot,

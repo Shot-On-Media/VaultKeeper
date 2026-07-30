@@ -16,6 +16,7 @@ from app.repositories.restore import RestoreJobRepository
 from app.repositories.snapshot import SnapshotRepository
 from app.schemas.restore import RestoreCreate, RestoreResponse, RestoreStatus
 from app.schemas.snapshot import SnapshotStatus
+from app.services.notification import NotificationEvent, NotificationService
 
 logger = structlog.get_logger(__name__)
 
@@ -118,6 +119,18 @@ class RestoreService:
             "restore_failed",
             restore_uuid=restore_job.uuid,
             error_message=message,
+        )
+        NotificationService(self.session).notify_event(
+            NotificationEvent(
+                event_type="restore.failed",
+                title="VaultKeeper restore failed",
+                message=(
+                    f"Restore {restore_job.uuid} for snapshot "
+                    f"{restore_job.snapshot.uuid} failed: {message}"
+                ),
+                priority="high",
+                tags=("warning",),
+            )
         )
 
     def _artifact_path(self, snapshot: Snapshot) -> Path:

@@ -20,6 +20,7 @@ from app.schemas.verification import (
     VerificationStatus,
 )
 from app.services.checksum import sha256_file
+from app.services.notification import NotificationEvent, NotificationService
 from app.services.repository import REPOSITORY_DIRECTORIES
 
 
@@ -72,7 +73,7 @@ class VerificationService:
             if failures
             else "Repository integrity verified."
         )
-        return self._store_report(
+        report = self._store_report(
             repository=repository,
             snapshot=None,
             scope=VerificationScope.REPOSITORY,
@@ -82,12 +83,23 @@ class VerificationService:
             message=message,
             details=details,
         )
+        if report.status is VerificationStatus.FAILED:
+            NotificationService(self.session).notify_event(
+                NotificationEvent(
+                    event_type="verification.failed",
+                    title="VaultKeeper repository verification failed",
+                    message=message,
+                    priority="high",
+                    tags=("warning",),
+                )
+            )
+        return report
 
     def verify_snapshot(self, snapshot_uuid: str) -> VerificationReportResponse:
         snapshot = self._get_snapshot(snapshot_uuid)
         details = self._verify_snapshot(snapshot)
         report_status = VerificationStatus(details["status"])
-        return self._store_report(
+        report = self._store_report(
             repository=snapshot.repository,
             snapshot=snapshot,
             scope=VerificationScope.SNAPSHOT,
@@ -97,6 +109,17 @@ class VerificationService:
             message=str(details["message"]),
             details=details,
         )
+        if report.status is VerificationStatus.FAILED:
+            NotificationService(self.session).notify_event(
+                NotificationEvent(
+                    event_type="verification.failed",
+                    title="VaultKeeper snapshot verification failed",
+                    message=f"Snapshot {snapshot.uuid}: {report.message}",
+                    priority="high",
+                    tags=("warning",),
+                )
+            )
+        return report
 
     def _verify_repository_layout(
         self,

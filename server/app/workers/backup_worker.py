@@ -11,6 +11,7 @@ from app.schemas.mariadb_backup import MariaDBBackupCreate
 from app.schemas.scheduler import BackupEngine, BackupJobResponse, BackupJobStatus
 from app.services.filesystem_backup import FilesystemBackupService
 from app.services.mariadb_backup import MariaDBBackupService
+from app.services.notification import NotificationEvent, NotificationService
 from app.services.queue import BackupQueue
 
 
@@ -62,6 +63,18 @@ class BackupWorker:
             else:
                 job.status = BackupJobStatus.FAILED.value
                 self.session.commit()
+                NotificationService(self.session).notify_event(
+                    NotificationEvent(
+                        event_type="backup.failed",
+                        title="VaultKeeper backup failed",
+                        message=(
+                            f"Backup policy {job.policy.name} failed after "
+                            f"{job.attempts} attempts: {job.error_message}"
+                        ),
+                        priority="high",
+                        tags=("warning",),
+                    )
+                )
             self.session.refresh(job)
             return self._to_response(job)
 
