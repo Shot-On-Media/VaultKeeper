@@ -10,6 +10,7 @@ import {
 import { RepositoryLocation, useRepositoryStore } from '../stores/repository'
 import { useRestoreStore } from '../stores/restore'
 import { useSchedulerStore } from '../stores/scheduler'
+import { useSecurityStore } from '../stores/security'
 import { useSnapshotStore } from '../stores/snapshot'
 import { StorageLocation, useStorageStore } from '../stores/storage'
 import { useVerificationStore } from '../stores/verification'
@@ -20,6 +21,7 @@ const notificationStore = useNotificationStore()
 const repositoryStore = useRepositoryStore()
 const restoreStore = useRestoreStore()
 const schedulerStore = useSchedulerStore()
+const securityStore = useSecurityStore()
 const snapshotStore = useSnapshotStore()
 const verificationStore = useVerificationStore()
 const editingUuid = ref<string | null>(null)
@@ -65,6 +67,13 @@ const notificationForm = reactive({
   recipient: '',
 })
 const editingNotificationUuid = ref<string | null>(null)
+const loginForm = reactive({
+  username: 'admin',
+  password: '',
+})
+const apiKeyForm = reactive({
+  name: '',
+})
 
 const hasStorage = computed(() => storageStore.items.length > 0)
 const hasRepositories = computed(() => repositoryStore.items.length > 0)
@@ -133,6 +142,7 @@ onMounted(() => {
   void schedulerStore.loadScheduler()
   void verificationStore.loadReports()
   void notificationStore.loadNotifications()
+  void securityStore.loadSecurity()
 })
 
 function resetForm(): void {
@@ -242,6 +252,17 @@ async function saveNotification(): Promise<void> {
   resetNotificationForm()
 }
 
+async function login(): Promise<void> {
+  await securityStore.login(loginForm.username, loginForm.password)
+  loginForm.password = ''
+  await securityStore.loadSecurity()
+}
+
+async function createAPIKey(): Promise<void> {
+  await securityStore.createAPIKey(apiKeyForm.name)
+  apiKeyForm.name = ''
+}
+
 function resetRepositoryForm(): void {
   editingRepositoryUuid.value = null
   repositoryForm.name = ''
@@ -340,6 +361,7 @@ async function createRestore(): Promise<void> {
         <a class="nav-item" href="#restores">Restores</a>
         <a class="nav-item" href="#verification">Verification</a>
         <a class="nav-item" href="#notifications">Notifications</a>
+        <a class="nav-item" href="#security">Security</a>
         <a class="nav-item" href="#scheduler">Scheduler</a>
       </nav>
       <dl class="summary-list">
@@ -1419,6 +1441,162 @@ async function createRestore(): Promise<void> {
                     : new Date(delivery.created_at).toLocaleString()
                 }}
               </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <header id="security" class="page-header">
+        <div>
+          <p class="eyebrow">Milestone 11</p>
+          <h2>Security</h2>
+        </div>
+        <div class="form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            @click="securityStore.loadSecurity()"
+          >
+            Refresh
+          </button>
+          <button
+            v-if="securityStore.isAuthenticated"
+            class="secondary-button"
+            type="button"
+            @click="securityStore.logout()"
+          >
+            Logout
+          </button>
+        </div>
+      </header>
+
+      <div v-if="securityStore.error" class="notice error">
+        {{ securityStore.error }}
+      </div>
+
+      <section class="form-panel" aria-label="Authentication form">
+        <form class="login-form" @submit.prevent="login">
+          <label>
+            <span>Username</span>
+            <input v-model="loginForm.username" required autocomplete="username" />
+          </label>
+          <label>
+            <span>Password</span>
+            <input
+              v-model="loginForm.password"
+              required
+              autocomplete="current-password"
+              type="password"
+            />
+          </label>
+          <div class="form-actions">
+            <button class="primary-button" type="submit" :disabled="securityStore.saving">
+              Login
+            </button>
+          </div>
+          <div v-if="securityStore.tokenExpiresAt" class="session-note">
+            Session expires {{ new Date(securityStore.tokenExpiresAt).toLocaleString() }}
+          </div>
+        </form>
+      </section>
+
+      <section class="form-panel" aria-label="API key form">
+        <form class="api-key-form" @submit.prevent="createAPIKey">
+          <label>
+            <span>API key name</span>
+            <input v-model="apiKeyForm.name" required maxlength="120" />
+          </label>
+          <div class="form-actions">
+            <button class="primary-button" type="submit" :disabled="securityStore.saving">
+              Create API key
+            </button>
+          </div>
+        </form>
+        <div v-if="securityStore.latestSecret" class="secret-panel">
+          <strong>New API key</strong>
+          <code>{{ securityStore.latestSecret }}</code>
+        </div>
+      </section>
+
+      <section class="table-panel" aria-label="API keys">
+        <div v-if="securityStore.loading" class="notice">Loading security records...</div>
+        <div v-else-if="securityStore.apiKeys.length === 0" class="empty-state">
+          No API keys have been created.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Prefix</th>
+              <th>Status</th>
+              <th>Last used</th>
+              <th class="actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="apiKey in securityStore.apiKeys" :key="apiKey.uuid">
+              <td>
+                <strong>{{ apiKey.name }}</strong>
+                <span>{{ apiKey.uuid }}</span>
+              </td>
+              <td>{{ apiKey.key_prefix }}</td>
+              <td>
+                <span :class="['status-pill', apiKey.enabled ? 'enabled' : 'disabled']">
+                  {{ apiKey.enabled ? 'enabled' : 'disabled' }}
+                </span>
+              </td>
+              <td>
+                {{
+                  apiKey.last_used_at
+                    ? new Date(apiKey.last_used_at).toLocaleString()
+                    : 'Never'
+                }}
+              </td>
+              <td class="row-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  @click="securityStore.setAPIKeyEnabled(apiKey.uuid, !apiKey.enabled)"
+                >
+                  {{ apiKey.enabled ? 'Disable' : 'Enable' }}
+                </button>
+                <button
+                  class="danger-button"
+                  type="button"
+                  @click="securityStore.deleteAPIKey(apiKey.uuid)"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="table-panel" aria-label="Audit logs">
+        <div v-if="securityStore.auditLogs.length === 0" class="empty-state">
+          No audit logs have been recorded.
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Actor</th>
+              <th>Action</th>
+              <th>Status</th>
+              <th>Client</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="auditLog in securityStore.auditLogs" :key="auditLog.uuid">
+              <td>{{ auditLog.actor }}</td>
+              <td>
+                <strong>{{ auditLog.action }}</strong>
+                <span>{{ auditLog.path }}</span>
+              </td>
+              <td>{{ auditLog.status_code }}</td>
+              <td>{{ auditLog.client_host ?? 'Unknown' }}</td>
+              <td>{{ new Date(auditLog.created_at).toLocaleString() }}</td>
             </tr>
           </tbody>
         </table>
