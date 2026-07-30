@@ -86,7 +86,8 @@ h2 {
   border-radius: 8px;
 }
 
-.nav-item.active {
+.nav-item.active,
+.nav-item.router-link-active {
   color: #ffffff;
   background: #22324b;
   border-color: #344765;
@@ -168,6 +169,12 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 18px;
 }
 
 .metric-card {
@@ -517,6 +524,10 @@ progress {
   }
 
   .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 
