@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 60
+    security_enabled: bool = False
+    security_secret: str = Field(default="change-me-security-secret", repr=False)
+    admin_username: str = "admin"
+    admin_password: str = Field(default="change-me-admin-password", repr=False)
+    access_token_minutes: int = 60
 
     @property
     def database_url(self) -> str:

@@ -5,11 +5,49 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.api.v1.router import router as api_v1_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.database.session import SessionLocal
+from app.services.security import SecurityService
 from app.workers.scheduler_loop import run_scheduler_loop
+
+
+class AuditMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        response = await call_next(request)
+        settings: Settings = request.app.state.settings
+        if (
+            settings.security_enabled
+            and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and request.url.path.startswith("/api/v1/")
+            and request.url.path != "/api/v1/auth/login"
+        ):
+            principal = getattr(request.state, "principal", None)
+            actor = principal.actor if principal is not None else "anonymous"
+            session_factory = getattr(
+                request.app.state,
+                "audit_session_factory",
+                SessionLocal,
+            )
+            with session_factory() as session:
+                SecurityService(session, settings).record_audit(
+                    actor=actor,
+                    action=f"{request.method} {request.url.path}",
+                    path=request.url.path,
+                    method=request.method,
+                    status_code=response.status_code,
+                    client_host=request.client.host if request.client else None,
+                )
+        return response
 
 
 @asynccontextmanager
@@ -42,6 +80,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.state.settings = resolved_settings
+    application.state.audit_session_factory = SessionLocal
+    application.add_middleware(AuditMiddleware)
     application.include_router(api_v1_router)
     return application
 

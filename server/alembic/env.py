@@ -8,6 +8,8 @@ from alembic import context
 from app.core.config import get_settings
 from app.database.base import Base
 from app.models import (
+    APIKey,
+    AuditLog,
     BackupJob,
     BackupPolicy,
     NotificationChannel,
@@ -22,6 +24,8 @@ from app.models import (
 _ = (
     BackupJob,
     BackupPolicy,
+    APIKey,
+    AuditLog,
     NotificationChannel,
     NotificationDelivery,
     Repository,
