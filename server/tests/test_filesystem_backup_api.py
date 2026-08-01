@@ -12,14 +12,40 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.database.base import Base
 from app.database.session import get_database_session
+from app.drivers.ssh import SSHBinaryCommandResult, SSHHostKeyResult
 from app.main import create_app
-from app.models import Repository, Snapshot, Storage
+from app.models import ManagedServer, Repository, Snapshot, Storage
+from app.services.filesystem_backup import FilesystemBackupService
 
-_ = (Repository, Snapshot, Storage)
+_ = (ManagedServer, Repository, Snapshot, Storage)
+
+
+class FakeRemoteFilesystemSSHDriver:
+    def scan_host_key(self, hostname: str, port: int) -> SSHHostKeyResult:
+        return SSHHostKeyResult(
+            fingerprint_sha256="SHA256:trusted",
+            known_hosts_entry=f"[{hostname}]:{port} ssh-ed25519 AAAA",
+        )
+
+    def run_checked_binary_command(
+        self,
+        hostname: str,
+        port: int,
+        username: str,
+        host_key: SSHHostKeyResult,
+        command: list[str],
+        timeout_seconds: int = 3600,
+    ) -> SSHBinaryCommandResult:
+        assert command == ["vaultkeeper", "filesystem-snapshot", "/srv/app"]
+        return SSHBinaryCommandResult(
+            exit_code=0,
+            stdout=b"compressed remote tar",
+            stderr='{"file_count": 3, "source_bytes": 42}',
+        )
 
 
 @pytest.fixture
-def client() -> Generator[TestClient]:
+def client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -37,6 +63,13 @@ def client() -> Generator[TestClient]:
         with session_factory() as session:
             yield session
 
+    original_init = FilesystemBackupService.__init__
+
+    def patched_init(self: FilesystemBackupService, session: Session) -> None:
+        original_init(self, session)
+        self.ssh_driver = FakeRemoteFilesystemSSHDriver()
+
+    monkeypatch.setattr(FilesystemBackupService, "__init__", patched_init)
     app = create_app(
         Settings(
             db_name="vaultkeeper",
@@ -73,6 +106,20 @@ def create_repository(client: TestClient, path: Path) -> str:
     )
     assert repository_response.status_code == 201
     return str(repository_response.json()["uuid"])
+
+
+def create_managed_server(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote app",
+            "hostname": "remote-app.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:trusted",
+        },
+    )
+    assert response.status_code == 201
+    return str(response.json()["uuid"])
 
 
 def test_filesystem_backup_creates_completed_snapshot(
@@ -128,3 +175,35 @@ def test_filesystem_backup_requires_existing_source(
     )
 
     assert response.status_code == 422
+
+
+def test_remote_filesystem_backup_creates_completed_snapshot(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repository-root"
+    repository_root.mkdir()
+    repository_uuid = create_repository(client, repository_root)
+    managed_server_uuid = create_managed_server(client)
+
+    response = client.post(
+        "/api/v1/filesystem-backups",
+        json={
+            "repository_uuid": repository_uuid,
+            "managed_server_uuid": managed_server_uuid,
+            "source_path": "/srv/app",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    artifact_path = Path(payload["artifact_path"])
+    assert artifact_path.read_bytes() == b"compressed remote tar"
+    assert payload["file_count"] == 3
+    assert payload["source_bytes"] == 42
+    assert payload["compressed_bytes"] == len(b"compressed remote tar")
+    assert payload["snapshot"]["source"] == "Remote app:/srv/app"
+    assert payload["snapshot"]["manifest"]["managed_server_uuid"] == managed_server_uuid
+    assert payload["snapshot"]["manifest"]["remote_hostname"] == (
+        "remote-app.example.test"
+    )

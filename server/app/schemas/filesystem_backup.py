@@ -10,6 +10,7 @@ from app.schemas.snapshot import SnapshotResponse
 class FilesystemBackupCreate(BaseModel):
     repository_uuid: str = Field(min_length=36, max_length=36)
     source_path: str = Field(min_length=1, max_length=4096)
+    managed_server_uuid: str | None = Field(default=None, min_length=36, max_length=36)
 
     @field_validator("source_path")
     @classmethod

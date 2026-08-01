@@ -13,11 +13,12 @@ from app.core.config import Settings
 from app.database.base import Base
 from app.database.session import get_database_session
 from app.drivers.snapshot.mariadb import MariaDBConnectionConfig
+from app.drivers.ssh import SSHBinaryCommandResult, SSHHostKeyResult
 from app.main import create_app
-from app.models import Repository, Snapshot, Storage
+from app.models import ManagedServer, Repository, Snapshot, Storage
 from app.services.mariadb_backup import MariaDBBackupService
 
-_ = (Repository, Snapshot, Storage)
+_ = (ManagedServer, Repository, Snapshot, Storage)
 
 
 class FakeMariaDBSnapshotDriver:
@@ -34,6 +35,44 @@ class FakeMariaDBSnapshotDriver:
 
     def compress_zstd(self, dump_path: Path, compressed_path: Path) -> None:
         compressed_path.write_bytes(dump_path.read_bytes())
+
+
+class FakeRemoteMariaDBSSHDriver:
+    def scan_host_key(self, hostname: str, port: int) -> SSHHostKeyResult:
+        return SSHHostKeyResult(
+            fingerprint_sha256="SHA256:trusted",
+            known_hosts_entry=f"[{hostname}]:{port} ssh-ed25519 AAAA",
+        )
+
+    def run_checked_binary_command(
+        self,
+        hostname: str,
+        port: int,
+        username: str,
+        host_key: SSHHostKeyResult,
+        command: list[str],
+        timeout_seconds: int = 3600,
+    ) -> SSHBinaryCommandResult:
+        assert command[:9] == [
+            "vaultkeeper",
+            "mariadb-snapshot",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "3306",
+            "--user",
+            "vaultkeeper",
+            "--password",
+        ]
+        assert command[10:] == [
+            "--database",
+            "customer",
+        ]
+        return SSHBinaryCommandResult(
+            exit_code=0,
+            stdout=b"compressed remote sql",
+            stderr='{"source_bytes": 128}',
+        )
 
 
 @pytest.fixture
@@ -60,6 +99,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     def patched_init(self: MariaDBBackupService, session: Session) -> None:
         original_init(self, session)
         self.driver = FakeMariaDBSnapshotDriver()
+        self.ssh_driver = FakeRemoteMariaDBSSHDriver()
 
     monkeypatch.setattr(MariaDBBackupService, "__init__", patched_init)
     app = create_app(
@@ -100,6 +140,20 @@ def create_repository(client: TestClient, path: Path) -> str:
     return str(repository_response.json()["uuid"])
 
 
+def create_managed_server(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote db",
+            "hostname": "remote-db.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:trusted",
+        },
+    )
+    assert response.status_code == 201
+    return str(response.json()["uuid"])
+
+
 def test_mariadb_database_discovery(client: TestClient) -> None:
     response = client.get("/api/v1/mariadb-backups/databases")
 
@@ -135,3 +189,35 @@ def test_mariadb_backup_creates_completed_snapshot(
     assert payload["snapshot"]["status"] == "completed"
     assert payload["snapshot"]["manifest"]["artifact"] == artifact_path.name
     assert payload["snapshot"]["manifest"]["sha256"]
+
+
+def test_remote_mariadb_backup_creates_completed_snapshot(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repository-root"
+    repository_root.mkdir()
+    repository_uuid = create_repository(client, repository_root)
+    managed_server_uuid = create_managed_server(client)
+
+    response = client.post(
+        "/api/v1/mariadb-backups",
+        json={
+            "repository_uuid": repository_uuid,
+            "managed_server_uuid": managed_server_uuid,
+            "database_name": "customer",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    artifact_path = Path(payload["artifact_path"])
+    assert artifact_path.read_bytes() == b"compressed remote sql"
+    assert payload["database_name"] == "customer"
+    assert payload["dump_bytes"] == 128
+    assert payload["compressed_bytes"] == len(b"compressed remote sql")
+    assert payload["snapshot"]["source"] == "Remote db:customer"
+    assert payload["snapshot"]["manifest"]["managed_server_uuid"] == managed_server_uuid
+    assert payload["snapshot"]["manifest"]["remote_hostname"] == (
+        "remote-db.example.test"
+    )

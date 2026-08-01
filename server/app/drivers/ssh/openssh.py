@@ -18,6 +18,13 @@ class SSHCommandResult:
     stderr: str
 
 
+@dataclass(frozen=True)
+class SSHBinaryCommandResult:
+    exit_code: int
+    stdout: bytes
+    stderr: str
+
+
 class OpenSSHDriver:
     def scan_host_key(
         self,
@@ -87,6 +94,42 @@ class OpenSSHDriver:
             exit_code=result.returncode,
             stdout=result.stdout,
             stderr=result.stderr,
+        )
+
+    def run_checked_binary_command(
+        self,
+        hostname: str,
+        port: int,
+        username: str,
+        host_key: SSHHostKeyResult,
+        command: list[str],
+        timeout_seconds: int = 3600,
+    ) -> SSHBinaryCommandResult:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as known_hosts:
+            known_hosts.write(host_key.known_hosts_entry + "\n")
+            known_hosts.flush()
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-p",
+                    str(port),
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                    "-o",
+                    f"UserKnownHostsFile={known_hosts.name}",
+                    f"{username}@{hostname}",
+                    *command,
+                ],
+                check=False,
+                capture_output=True,
+                timeout=timeout_seconds,
+            )
+        return SSHBinaryCommandResult(
+            exit_code=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr.decode("utf-8", errors="replace"),
         )
 
     def _parse_sha256_fingerprint(self, output: str) -> str:

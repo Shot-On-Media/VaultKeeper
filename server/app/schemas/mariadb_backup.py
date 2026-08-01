@@ -8,6 +8,7 @@ from app.schemas.snapshot import SnapshotResponse
 class MariaDBBackupCreate(BaseModel):
     repository_uuid: str = Field(min_length=36, max_length=36)
     database_name: str | None = Field(default=None, min_length=1, max_length=256)
+    managed_server_uuid: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class MariaDBDatabaseListResponse(BaseModel):
