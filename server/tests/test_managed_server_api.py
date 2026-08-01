@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.database.base import Base
 from app.database.session import get_database_session
+from app.drivers.ssh import SSHCommandResult, SSHHostKeyResult
 from app.main import create_app
 from app.models import ManagedServer
 
@@ -140,3 +141,136 @@ def test_missing_managed_server_returns_404(client: TestClient) -> None:
     )
 
     assert response.status_code == 404
+
+
+class FakeSuccessfulSSHDriver:
+    def scan_host_key(self, hostname: str, port: int) -> SSHHostKeyResult:
+        return SSHHostKeyResult(
+            fingerprint_sha256="SHA256:trusted",
+            known_hosts_entry=f"[{hostname}]:{port} ssh-ed25519 AAAA",
+        )
+
+    def run_checked_command(
+        self,
+        hostname: str,
+        port: int,
+        username: str,
+        host_key: SSHHostKeyResult,
+        command: list[str],
+    ) -> SSHCommandResult:
+        return SSHCommandResult(exit_code=0, stdout="", stderr="")
+
+
+class FakeFailingSSHDriver:
+    def scan_host_key(self, hostname: str, port: int) -> SSHHostKeyResult:
+        raise RuntimeError("connection timed out")
+
+
+def test_verify_host_key_trusts_discovered_fingerprint(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeSuccessfulSSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 01",
+            "hostname": "remote01.example.test",
+            "ssh_username": "vaultkeeper",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/verify-host-key")
+
+    assert response.status_code == 200
+    assert response.json()["fingerprint_sha256"] == "SHA256:trusted"
+    assert response.json()["trusted"] is True
+    listed = client.get("/api/v1/managed-servers").json()
+    assert listed[0]["ssh_host_key_sha256"] == "SHA256:trusted"
+
+
+def test_connectivity_requires_trusted_host_key(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeSuccessfulSSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 02",
+            "hostname": "remote02.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:other",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/test")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unverified"
+    assert response.json()["host_key_verified"] is False
+    listed = client.get("/api/v1/managed-servers").json()
+    assert listed[0]["status"] == "unverified"
+
+
+def test_connectivity_marks_server_online_when_key_matches(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeSuccessfulSSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 03",
+            "hostname": "remote03.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:trusted",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/test")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "online"
+    assert response.json()["host_key_verified"] is True
+    listed = client.get("/api/v1/managed-servers").json()
+    assert listed[0]["status"] == "online"
+    assert listed[0]["last_error"] is None
+
+
+def test_connectivity_marks_server_offline_when_scan_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeFailingSSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 04",
+            "hostname": "remote04.example.test",
+            "ssh_username": "vaultkeeper",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/test")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "offline"
+    assert response.json()["host_key_verified"] is False
+    assert response.json()["message"] == "connection timed out"

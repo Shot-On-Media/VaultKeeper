@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.drivers.ssh import OpenSSHDriver
 from app.models.managed_server import ManagedServer
 from app.repositories.managed_server import ManagedServerRepository
 from app.schemas.managed_server import (
+    ManagedServerConnectivityResponse,
     ManagedServerCreate,
+    ManagedServerHostKeyResponse,
     ManagedServerResponse,
     ManagedServerStatus,
     ManagedServerUpdate,
@@ -14,8 +19,11 @@ from app.schemas.managed_server import (
 
 
 class ManagedServerService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self, session: Session, ssh_driver: OpenSSHDriver | None = None
+    ) -> None:
         self.repository = ManagedServerRepository(session)
+        self.ssh_driver = ssh_driver or OpenSSHDriver()
         self.session = session
 
     def list_servers(self) -> list[ManagedServerResponse]:
@@ -75,6 +83,106 @@ class ManagedServerService:
         server = self._get_server(server_uuid)
         self.repository.delete(server)
         self.session.commit()
+
+    def verify_host_key(self, server_uuid: str) -> ManagedServerHostKeyResponse:
+        server = self._get_server(server_uuid)
+        checked_at = datetime.now(UTC)
+        try:
+            host_key = self.ssh_driver.scan_host_key(server.hostname, server.ssh_port)
+        except RuntimeError as exc:
+            server.status = ManagedServerStatus.OFFLINE.value
+            server.last_checked_at = checked_at
+            server.last_error = str(exc)
+            self.session.commit()
+            return ManagedServerHostKeyResponse(
+                uuid=server.uuid,
+                fingerprint_sha256="",
+                trusted=False,
+                message=str(exc),
+                checked_at=checked_at,
+            )
+
+        server.ssh_host_key_sha256 = host_key.fingerprint_sha256
+        server.status = ManagedServerStatus.UNKNOWN.value
+        server.last_checked_at = checked_at
+        server.last_error = None
+        self.session.commit()
+        return ManagedServerHostKeyResponse(
+            uuid=server.uuid,
+            fingerprint_sha256=host_key.fingerprint_sha256,
+            trusted=True,
+            message="SSH host key fingerprint trusted.",
+            checked_at=checked_at,
+        )
+
+    def test_connectivity(
+        self,
+        server_uuid: str,
+    ) -> ManagedServerConnectivityResponse:
+        server = self._get_server(server_uuid)
+        checked_at = datetime.now(UTC)
+        try:
+            host_key = self.ssh_driver.scan_host_key(server.hostname, server.ssh_port)
+        except RuntimeError as exc:
+            return self._record_connectivity_result(
+                server,
+                ManagedServerStatus.OFFLINE,
+                False,
+                str(exc),
+                checked_at,
+            )
+        if server.ssh_host_key_sha256 != host_key.fingerprint_sha256:
+            return self._record_connectivity_result(
+                server,
+                ManagedServerStatus.UNVERIFIED,
+                False,
+                f"SSH host key is not trusted: {host_key.fingerprint_sha256}",
+                checked_at,
+            )
+        result = self.ssh_driver.run_checked_command(
+            server.hostname,
+            server.ssh_port,
+            server.ssh_username,
+            host_key,
+            ["true"],
+        )
+        if result.exit_code != 0:
+            return self._record_connectivity_result(
+                server,
+                ManagedServerStatus.OFFLINE,
+                True,
+                result.stderr.strip() or "SSH connectivity test failed.",
+                checked_at,
+            )
+        return self._record_connectivity_result(
+            server,
+            ManagedServerStatus.ONLINE,
+            True,
+            "SSH connectivity verified.",
+            checked_at,
+        )
+
+    def _record_connectivity_result(
+        self,
+        server: ManagedServer,
+        status_value: ManagedServerStatus,
+        host_key_verified: bool,
+        message: str,
+        checked_at: datetime,
+    ) -> ManagedServerConnectivityResponse:
+        server.status = status_value.value
+        server.last_checked_at = checked_at
+        server.last_error = (
+            None if status_value is ManagedServerStatus.ONLINE else message
+        )
+        self.session.commit()
+        return ManagedServerConnectivityResponse(
+            uuid=server.uuid,
+            status=status_value,
+            host_key_verified=host_key_verified,
+            message=message,
+            checked_at=checked_at,
+        )
 
     def _get_server(self, server_uuid: str) -> ManagedServer:
         server = self.repository.get_by_uuid(server_uuid)

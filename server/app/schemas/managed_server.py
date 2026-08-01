@@ -50,3 +50,19 @@ class ManagedServerResponse(BaseModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ManagedServerHostKeyResponse(BaseModel):
+    uuid: str
+    fingerprint_sha256: str
+    trusted: bool
+    message: str
+    checked_at: datetime
+
+
+class ManagedServerConnectivityResponse(BaseModel):
+    uuid: str
+    status: ManagedServerStatus
+    host_key_verified: bool
+    message: str
+    checked_at: datetime

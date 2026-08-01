@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_database_session
 from app.schemas.managed_server import (
+    ManagedServerConnectivityResponse,
     ManagedServerCreate,
+    ManagedServerHostKeyResponse,
     ManagedServerResponse,
     ManagedServerUpdate,
 )
@@ -55,3 +57,21 @@ def delete_server(
 ) -> Response:
     service.delete_server(server_uuid)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{server_uuid}/verify-host-key", response_model=ManagedServerHostKeyResponse
+)
+def verify_host_key(
+    server_uuid: str,
+    service: Annotated[ManagedServerService, Depends(get_managed_server_service)],
+) -> ManagedServerHostKeyResponse:
+    return service.verify_host_key(server_uuid)
+
+
+@router.post("/{server_uuid}/test", response_model=ManagedServerConnectivityResponse)
+def test_connectivity(
+    server_uuid: str,
+    service: Annotated[ManagedServerService, Depends(get_managed_server_service)],
+) -> ManagedServerConnectivityResponse:
+    return service.test_connectivity(server_uuid)
