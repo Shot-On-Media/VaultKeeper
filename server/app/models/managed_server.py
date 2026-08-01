@@ -25,6 +25,15 @@ class ManagedServer(Base, UUIDMixin, TimestampMixin):
         default="vaultkeeper",
     )
     tags: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    inventory: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    last_inventory_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="unknown")
     last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

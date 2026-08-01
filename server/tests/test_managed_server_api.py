@@ -157,13 +157,49 @@ class FakeSuccessfulSSHDriver:
         username: str,
         host_key: SSHHostKeyResult,
         command: list[str],
+        timeout_seconds: int = 10,
     ) -> SSHCommandResult:
+        if command[:2] == ["sh", "-c"]:
+            return SSHCommandResult(
+                exit_code=0,
+                stdout=(
+                    "os_id=debian\n"
+                    "os_name=Debian GNU/Linux 12 (bookworm)\n"
+                    "kernel=6.1.0\n"
+                    "architecture=x86_64\n"
+                    "cpu_count=4\n"
+                    "memory_total_kib=8123456\n"
+                    "root_total_kib=41234567\n"
+                    "root_available_kib=21234567\n"
+                    "python3_path=/usr/bin/python3\n"
+                    "mariadb_path=/usr/bin/mariadb\n"
+                    "rsync_path=\n"
+                ),
+                stderr="",
+            )
         return SSHCommandResult(exit_code=0, stdout="", stderr="")
 
 
 class FakeFailingSSHDriver:
     def scan_host_key(self, hostname: str, port: int) -> SSHHostKeyResult:
         raise RuntimeError("connection timed out")
+
+
+class FakeFailingInventorySSHDriver(FakeSuccessfulSSHDriver):
+    def run_checked_command(
+        self,
+        hostname: str,
+        port: int,
+        username: str,
+        host_key: SSHHostKeyResult,
+        command: list[str],
+        timeout_seconds: int = 10,
+    ) -> SSHCommandResult:
+        return SSHCommandResult(
+            exit_code=2,
+            stdout="",
+            stderr="df failed",
+        )
 
 
 def test_verify_host_key_trusts_discovered_fingerprint(
@@ -274,3 +310,93 @@ def test_connectivity_marks_server_offline_when_scan_fails(
     assert response.json()["status"] == "offline"
     assert response.json()["host_key_verified"] is False
     assert response.json()["message"] == "connection timed out"
+
+
+def test_inventory_collects_remote_system_snapshot(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeSuccessfulSSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 05",
+            "hostname": "remote05.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:trusted",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/inventory")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "online"
+    assert body["inventory"]["os"]["id"] == "debian"
+    assert body["inventory"]["os"]["architecture"] == "x86_64"
+    assert body["inventory"]["resources"]["cpu_count"] == 4
+    assert body["inventory"]["resources"]["memory_total_kib"] == 8123456
+    assert body["inventory"]["tools"]["python3"] == "/usr/bin/python3"
+    assert body["inventory"]["tools"]["rsync"] is None
+    listed = client.get("/api/v1/managed-servers").json()
+    assert listed[0]["inventory"] == body["inventory"]
+    assert listed[0]["last_inventory_at"] is not None
+
+
+def test_inventory_requires_trusted_host_key(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeSuccessfulSSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 06",
+            "hostname": "remote06.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:other",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/inventory")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "SSH host key is not trusted: SHA256:trusted"
+    listed = client.get("/api/v1/managed-servers").json()
+    assert listed[0]["status"] == "unverified"
+
+
+def test_inventory_reports_remote_command_failure(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.managed_server.OpenSSHDriver",
+        FakeFailingInventorySSHDriver,
+    )
+    create_response = client.post(
+        "/api/v1/managed-servers",
+        json={
+            "name": "Remote 07",
+            "hostname": "remote07.example.test",
+            "ssh_username": "vaultkeeper",
+            "ssh_host_key_sha256": "SHA256:trusted",
+        },
+    )
+    server_uuid = create_response.json()["uuid"]
+
+    response = client.post(f"/api/v1/managed-servers/{server_uuid}/inventory")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "df failed"
+    listed = client.get("/api/v1/managed-servers").json()
+    assert listed[0]["status"] == "offline"
+    assert listed[0]["last_error"] == "df failed"

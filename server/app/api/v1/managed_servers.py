@@ -10,6 +10,7 @@ from app.schemas.managed_server import (
     ManagedServerConnectivityResponse,
     ManagedServerCreate,
     ManagedServerHostKeyResponse,
+    ManagedServerInventoryResponse,
     ManagedServerResponse,
     ManagedServerUpdate,
 )
@@ -75,3 +76,11 @@ def test_connectivity(
     service: Annotated[ManagedServerService, Depends(get_managed_server_service)],
 ) -> ManagedServerConnectivityResponse:
     return service.test_connectivity(server_uuid)
+
+
+@router.post("/{server_uuid}/inventory", response_model=ManagedServerInventoryResponse)
+def collect_inventory(
+    server_uuid: str,
+    service: Annotated[ManagedServerService, Depends(get_managed_server_service)],
+) -> ManagedServerInventoryResponse:
+    return service.collect_inventory(server_uuid)

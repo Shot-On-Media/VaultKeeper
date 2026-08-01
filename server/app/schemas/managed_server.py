@@ -45,6 +45,8 @@ class ManagedServerResponse(BaseModel):
     ssh_host_key_sha256: str | None
     client_path: str
     tags: dict[str, Any]
+    inventory: dict[str, Any]
+    last_inventory_at: datetime | None
     status: ManagedServerStatus
     last_checked_at: datetime | None
     last_error: str | None
@@ -66,3 +68,10 @@ class ManagedServerConnectivityResponse(BaseModel):
     host_key_verified: bool
     message: str
     checked_at: datetime
+
+
+class ManagedServerInventoryResponse(BaseModel):
+    uuid: str
+    status: ManagedServerStatus
+    inventory: dict[str, Any]
+    collected_at: datetime
