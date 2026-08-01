@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.models.managed_server import ManagedServer
 from app.models.notification import NotificationChannel, NotificationDelivery
 from app.models.repository import Repository
 from app.models.restore import RestoreJob
@@ -14,6 +15,7 @@ __all__ = [
     "BackupPolicy",
     "APIKey",
     "AuditLog",
+    "ManagedServer",
     "NotificationChannel",
     "NotificationDelivery",
     "Repository",

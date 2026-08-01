@@ -6,6 +6,7 @@ from app.api.security import require_principal
 from app.api.v1.auth import router as auth_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.filesystem_backups import router as filesystem_backups_router
+from app.api.v1.managed_servers import router as managed_servers_router
 from app.api.v1.mariadb_backups import router as mariadb_backups_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.repositories import router as repositories_router
@@ -28,6 +29,7 @@ protected_router.include_router(repositories_router)
 protected_router.include_router(snapshots_router)
 protected_router.include_router(filesystem_backups_router)
 protected_router.include_router(mariadb_backups_router)
+protected_router.include_router(managed_servers_router)
 protected_router.include_router(scheduler_router)
 protected_router.include_router(restores_router)
 protected_router.include_router(verification_router)
