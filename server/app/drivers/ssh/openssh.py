@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -19,9 +20,8 @@ class SSHCommandResult:
 
 
 @dataclass(frozen=True)
-class SSHBinaryCommandResult:
+class SSHStreamCommandResult:
     exit_code: int
-    stdout: bytes
     stderr: str
 
 
@@ -96,39 +96,41 @@ class OpenSSHDriver:
             stderr=result.stderr,
         )
 
-    def run_checked_binary_command(
+    def stream_checked_binary_command(
         self,
         hostname: str,
         port: int,
         username: str,
         host_key: SSHHostKeyResult,
         command: list[str],
+        destination_path: Path,
         timeout_seconds: int = 3600,
-    ) -> SSHBinaryCommandResult:
+    ) -> SSHStreamCommandResult:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as known_hosts:
             known_hosts.write(host_key.known_hosts_entry + "\n")
             known_hosts.flush()
-            result = subprocess.run(
-                [
-                    "ssh",
-                    "-p",
-                    str(port),
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "StrictHostKeyChecking=yes",
-                    "-o",
-                    f"UserKnownHostsFile={known_hosts.name}",
-                    f"{username}@{hostname}",
-                    *command,
-                ],
-                check=False,
-                capture_output=True,
-                timeout=timeout_seconds,
-            )
-        return SSHBinaryCommandResult(
+            with destination_path.open("wb") as destination_file:
+                result = subprocess.run(
+                    [
+                        "ssh",
+                        "-p",
+                        str(port),
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "StrictHostKeyChecking=yes",
+                        "-o",
+                        f"UserKnownHostsFile={known_hosts.name}",
+                        f"{username}@{hostname}",
+                        *command,
+                    ],
+                    check=False,
+                    stdout=destination_file,
+                    stderr=subprocess.PIPE,
+                    timeout=timeout_seconds,
+                )
+        return SSHStreamCommandResult(
             exit_code=result.returncode,
-            stdout=result.stdout,
             stderr=result.stderr.decode("utf-8", errors="replace"),
         )
 

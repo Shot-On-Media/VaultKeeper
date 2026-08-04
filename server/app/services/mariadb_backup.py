@@ -156,7 +156,7 @@ class MariaDBBackupService:
         snapshot = self.snapshot_service.start_snapshot(snapshot.uuid)
         artifact_path = snapshots_path / f"{snapshot.uuid}.sql.zst"
         try:
-            result = self.ssh_driver.run_checked_binary_command(
+            result = self.ssh_driver.stream_checked_binary_command(
                 server.hostname,
                 server.ssh_port,
                 server.ssh_username,
@@ -175,10 +175,10 @@ class MariaDBBackupService:
                     "--database",
                     database_name,
                 ],
+                artifact_path,
             )
             if result.exit_code != 0:
                 raise RuntimeError(result.stderr.strip() or "Remote backup failed.")
-            artifact_path.write_bytes(result.stdout)
             metadata = self._parse_remote_metadata(result.stderr)
             dump_bytes = self._metadata_int(metadata, "source_bytes")
             compressed_bytes = artifact_path.stat().st_size

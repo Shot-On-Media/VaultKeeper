@@ -143,7 +143,7 @@ class FilesystemBackupService:
         snapshot = self.snapshot_service.start_snapshot(snapshot.uuid)
         artifact_path = snapshots_path / f"{snapshot.uuid}.tar.zst"
         try:
-            result = self.ssh_driver.run_checked_binary_command(
+            result = self.ssh_driver.stream_checked_binary_command(
                 server.hostname,
                 server.ssh_port,
                 server.ssh_username,
@@ -153,10 +153,10 @@ class FilesystemBackupService:
                     "filesystem-snapshot",
                     payload.source_path,
                 ],
+                artifact_path,
             )
             if result.exit_code != 0:
                 raise RuntimeError(result.stderr.strip() or "Remote backup failed.")
-            artifact_path.write_bytes(result.stdout)
             metadata = self._parse_remote_metadata(result.stderr)
             compressed_bytes = artifact_path.stat().st_size
             checksum = sha256_file(artifact_path)

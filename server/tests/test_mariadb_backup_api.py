@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.database.base import Base
 from app.database.session import get_database_session
 from app.drivers.snapshot.mariadb import MariaDBConnectionConfig
-from app.drivers.ssh import SSHBinaryCommandResult, SSHHostKeyResult
+from app.drivers.ssh import SSHHostKeyResult, SSHStreamCommandResult
 from app.main import create_app
 from app.models import ManagedServer, Repository, Snapshot, Storage
 from app.services.mariadb_backup import MariaDBBackupService
@@ -44,15 +44,16 @@ class FakeRemoteMariaDBSSHDriver:
             known_hosts_entry=f"[{hostname}]:{port} ssh-ed25519 AAAA",
         )
 
-    def run_checked_binary_command(
+    def stream_checked_binary_command(
         self,
         hostname: str,
         port: int,
         username: str,
         host_key: SSHHostKeyResult,
         command: list[str],
+        destination_path: Path,
         timeout_seconds: int = 3600,
-    ) -> SSHBinaryCommandResult:
+    ) -> SSHStreamCommandResult:
         assert command[:9] == [
             "vaultkeeper",
             "mariadb-snapshot",
@@ -68,9 +69,9 @@ class FakeRemoteMariaDBSSHDriver:
             "--database",
             "customer",
         ]
-        return SSHBinaryCommandResult(
+        destination_path.write_bytes(b"compressed remote sql")
+        return SSHStreamCommandResult(
             exit_code=0,
-            stdout=b"compressed remote sql",
             stderr='{"source_bytes": 128}',
         )
 

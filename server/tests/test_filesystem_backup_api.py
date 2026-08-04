@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.database.base import Base
 from app.database.session import get_database_session
-from app.drivers.ssh import SSHBinaryCommandResult, SSHHostKeyResult
+from app.drivers.ssh import SSHHostKeyResult, SSHStreamCommandResult
 from app.main import create_app
 from app.models import ManagedServer, Repository, Snapshot, Storage
 from app.services.filesystem_backup import FilesystemBackupService
@@ -27,19 +27,20 @@ class FakeRemoteFilesystemSSHDriver:
             known_hosts_entry=f"[{hostname}]:{port} ssh-ed25519 AAAA",
         )
 
-    def run_checked_binary_command(
+    def stream_checked_binary_command(
         self,
         hostname: str,
         port: int,
         username: str,
         host_key: SSHHostKeyResult,
         command: list[str],
+        destination_path: Path,
         timeout_seconds: int = 3600,
-    ) -> SSHBinaryCommandResult:
+    ) -> SSHStreamCommandResult:
         assert command == ["vaultkeeper", "filesystem-snapshot", "/srv/app"]
-        return SSHBinaryCommandResult(
+        destination_path.write_bytes(b"compressed remote tar")
+        return SSHStreamCommandResult(
             exit_code=0,
-            stdout=b"compressed remote tar",
             stderr='{"file_count": 3, "source_bytes": 42}',
         )
 
