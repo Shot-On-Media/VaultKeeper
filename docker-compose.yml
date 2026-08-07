@@ -1,0 +1,82 @@
+name: vaultkeeper
+
+services:
+  mariadb:
+    image: mariadb:11.8
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${VK_DB_NAME}
+      MARIADB_USER: ${VK_DB_USER}
+      MARIADB_PASSWORD: ${VK_DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${VK_DB_ROOT_PASSWORD}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      VK_APP_ENV: ${VK_APP_ENV:-development}
+      VK_DB_HOST: mariadb
+      VK_DB_PORT: 3306
+      VK_DB_NAME: ${VK_DB_NAME}
+      VK_DB_USER: ${VK_DB_USER}
+      VK_DB_PASSWORD: ${VK_DB_PASSWORD}
+      VK_REDIS_URL: redis://redis:6379/0
+      VK_SCHEDULER_ENABLED: "true"
+      VK_SCHEDULER_INTERVAL_SECONDS: 10
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  apache:
+    build:
+      context: .
+      dockerfile: docker/apache/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${VK_HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+volumes:
+  mariadb_data:
+  redis_data:
